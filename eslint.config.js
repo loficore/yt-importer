@@ -6,7 +6,7 @@ export default tseslint.config(
   // 1. 全局忽略配置 (必须放在最前面，且不能包含 'files' 属性)
   // 这会让 ESLint 完全跳过这些文件，不进行任何扫描
   {
-    ignores: ["src/test/**", "src/test*.ts"],
+    ignores: ["src/test/**", "src/test*.ts", "test/**", "test/*.ts"],
   },
 
   // 2. 基础预设

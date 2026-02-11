@@ -227,6 +227,23 @@ yt-importer/
 - [ ]  进度条显示
 - [ ]  日志报告导出
 
+## 测试
+
+### 运行测试
+```bash
+bun test              # 运行所有测试
+bun test test/matcher.test.ts  # 运行特定文件
+```
+
+### 测试文件
+- `test/matcher.test.ts` - 匹配算法测试（22 个测试）
+- `test/types.test.ts` - 类型定义测试（12 个测试）
+- `test/csvParser.test.ts` - CSV 解析测试（9 个测试）
+
+### 测试覆盖率
+- 43 个测试全部通过
+- 覆盖：标准化、时长匹配、艺术家匹配、置信度计算、类型验证
+
 ## 运行示例
 
 ```bash

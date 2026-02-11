@@ -30,6 +30,7 @@
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
     "lint": "eslint src/**/*.ts",
-    "build:check": "tsc --noEmit"
+    "build:check": "tsc --noEmit",
+    "test": "bun test test/"
   }
 }
