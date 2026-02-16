@@ -212,7 +212,11 @@ describe("matcher.ts", () => {
 
       const filtered = filterByConfidence(results, "medium");
       expect(filtered.length).toBe(2);
-      expect(filtered.every((r) => r.confidence === "high" || r.confidence === "medium")).toBe(true);
+      expect(
+        filtered.every(
+          (r) => r.confidence === "high" || r.confidence === "medium",
+        ),
+      ).toBe(true);
     });
   });
 });

@@ -2,12 +2,14 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { parse } from "csv-parse/sync";
 import Searcher from "./searcher.js";
 import { matchTrackToResults } from "./matcher.js";
+import { t } from "../utils/i18n.js";
+import type { DB } from "../utils/db.js";
+import { DEFAULT_CONFIG, type ImporterConfig } from "../utils/config.js";
 import type {
   SpotifyTrack,
   YouTubeSong,
   MatchResult,
   ImportProgress,
-  ImporterConfig,
   ImportStats,
   MatchConfidence,
 } from "../types/index.js";
@@ -20,6 +22,12 @@ export interface ImporterOptions {
   cookiePath?: string;
   /** 导入配置（可选） */
   config?: Partial<ImporterConfig>;
+  /** 运行ID（可选） */
+  runId?: string;
+  /** DB实例（可选） */
+  db?: DB;
+  /** 已处理曲目key集合（可选） */
+  processedTrackKeys?: Set<string>;
 }
 
 /** CSV记录接口 */
@@ -46,6 +54,9 @@ export class Importer {
   private tracks: SpotifyTrack[] = [];
   private playlistId?: string;
   private csvPath: string;
+  private runId?: string;
+  private db?: DB;
+  private processedTrackKeys: Set<string>;
 
   /**
    * 构造函数
@@ -54,13 +65,16 @@ export class Importer {
   constructor(options: ImporterOptions) {
     this.searcher = new Searcher();
     this.csvPath = options.csvPath;
+    const userConfig = options.config ?? {};
     this.config = {
-      skipConfirmation: false,
-      minConfidence: "low",
-      requestDelay: 1500,
-      saveProgress: true,
-      progressFile: "./import-progress.json",
-      ...options.config,
+      ...DEFAULT_CONFIG,
+      ...userConfig,
+      logLevel: userConfig.logLevel ?? DEFAULT_CONFIG.logLevel,
+      maxRetries: userConfig.maxRetries ?? DEFAULT_CONFIG.maxRetries,
+      retryDelay: userConfig.retryDelay ?? DEFAULT_CONFIG.retryDelay,
+      enableCache: userConfig.enableCache ?? DEFAULT_CONFIG.enableCache,
+      cachePath: userConfig.cachePath ?? DEFAULT_CONFIG.cachePath,
+      batchSize: userConfig.batchSize ?? DEFAULT_CONFIG.batchSize,
     };
 
     this.progress = {
@@ -73,6 +87,13 @@ export class Importer {
       matchResults: [],
       timestamp: Date.now(),
     };
+
+    this.runId = options.runId;
+    this.db = options.db;
+    this.processedTrackKeys = options.processedTrackKeys ?? new Set();
+    if (this.processedTrackKeys.size > 0) {
+      this.progress.processedTracks = this.processedTrackKeys.size;
+    }
   }
 
   /**
@@ -113,7 +134,7 @@ export class Importer {
     }));
 
     this.progress.totalTracks = this.tracks.length;
-    console.log(`✓ Loaded ${this.tracks.length} tracks from CSV`);
+    console.log(t("loaded_tracks", { count: String(this.tracks.length) }));
   }
 
   /**
@@ -130,11 +151,17 @@ export class Importer {
     ];
     const minIndex = confidenceOrder.indexOf(this.config.minConfidence);
 
-    const startIndex = this.progress.processedTracks;
+    const startIndex =
+      this.processedTrackKeys.size > 0 ? 0 : this.progress.processedTracks;
 
     for (let i = startIndex; i < this.tracks.length; i++) {
       const track = this.tracks[i];
       if (!track) continue;
+
+      const trackKey = this.getTrackKey(track);
+      if (this.processedTrackKeys.has(trackKey)) {
+        continue;
+      }
 
       console.log(
         `\n[${i + 1}/${this.tracks.length}] Processing: ${track.name} - ${track.artist}`,
@@ -150,11 +177,14 @@ export class Importer {
         results.push(matchResult);
         this.progress.matchResults.push(matchResult);
 
-        const meetsThreshold =
-          confidenceOrder.indexOf(matchResult.confidence) >= minIndex;
+        const confidence = matchResult.confidence;
+        const meetsThreshold = confidenceOrder.indexOf(confidence) >= minIndex;
+
+        let trackStatus: "matched" | "skipped" | "failed" = "failed";
 
         if (matchResult.confidence !== "none" && meetsThreshold) {
           this.progress.matchedTracks++;
+          trackStatus = "matched";
           console.log(
             `  ✓ Matched: ${matchResult.confidence} (${matchResult.matchReason})`,
           );
@@ -165,16 +195,19 @@ export class Importer {
           }
         } else if (matchResult.confidence !== "none" && !meetsThreshold) {
           this.progress.skippedTracks++;
+          trackStatus = "skipped";
           console.log(
             `  ⊘ Skipped: confidence below threshold (${matchResult.confidence} < ${this.config.minConfidence})`,
           );
         } else {
           this.progress.failedTracks++;
+          trackStatus = "failed";
           console.log("  ✗ No match found");
         }
 
         this.progress.processedTracks++;
         this.saveProgress();
+        this.recordDbProgress(track, trackKey, matchResult, trackStatus);
 
         if (this.config.requestDelay > 0) {
           await new Promise((resolve) =>
@@ -185,6 +218,7 @@ export class Importer {
         console.error("  ✗ Error processing track:", error);
         this.progress.failedTracks++;
         this.progress.processedTracks++;
+        this.recordDbFailure(track, trackKey, String(error));
       }
     }
 
@@ -200,7 +234,7 @@ export class Importer {
     try {
       this.playlistId = await this.searcher.createPlaylist(name);
       this.progress.playlistId = this.playlistId;
-      console.log(`✓ Created playlist: ${name} (ID: ${this.playlistId})`);
+      console.log(t("created_playlist", { name, id: String(this.playlistId) }));
     } catch (error) {
       console.error("✗ Failed to create playlist:", error);
       throw error;
@@ -238,7 +272,7 @@ export class Importer {
       }
     }
 
-    console.log(`\n→ Importing ${videoIds.length} songs to playlist...`);
+    console.log(t("importing_songs", { count: String(videoIds.length) }));
 
     /** 成功数量 */
     let success = 0;
@@ -379,6 +413,63 @@ export class Importer {
       return (minutes * 60 + seconds) * 1000;
     }
     return 0;
+  }
+
+  private getTrackKey(track: SpotifyTrack): string {
+    const uri = track.uri?.trim();
+    if (uri) return uri;
+    return `${track.name}|${track.artist}|${track.duration}`;
+  }
+
+  private recordDbProgress(
+    track: SpotifyTrack,
+    trackKey: string,
+    matchResult: MatchResult,
+    status: "matched" | "skipped" | "failed",
+  ): void {
+    if (!this.db || !this.runId) return;
+
+    this.db.upsertTrack({
+      runId: this.runId,
+      trackKey,
+      track,
+      matchResult,
+      status,
+    });
+
+    this.db.updateRunStats(this.runId, {
+      processedTracks: 1,
+      matchedTracks: status === "matched" ? 1 : 0,
+      failedTracks: status === "failed" ? 1 : 0,
+      skippedTracks: status === "skipped" ? 1 : 0,
+    });
+  }
+
+  private recordDbFailure(
+    track: SpotifyTrack,
+    trackKey: string,
+    errorMessage: string,
+  ): void {
+    if (!this.db || !this.runId) return;
+
+    this.db.updateRunStats(this.runId, {
+      processedTracks: 1,
+      failedTracks: 1,
+    });
+
+    this.db.upsertTrack({
+      runId: this.runId,
+      trackKey,
+      track,
+      matchResult: {
+        track,
+        youtubeSong: null,
+        confidence: "none",
+        matchReason: "none",
+      },
+      status: "failed",
+      errorMessage,
+    });
   }
 
   /**

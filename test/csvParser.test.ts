@@ -95,7 +95,10 @@ spotify:track:123,Test,Album,Artist,183000`;
         skip_empty_lines: true,
       }) as CsvRecord[];
 
-      const duration = Number.parseInt(records[0]?.["Duration (ms)"] ?? "0", 10);
+      const duration = Number.parseInt(
+        records[0]?.["Duration (ms)"] ?? "0",
+        10,
+      );
       expect(duration).toBe(183000);
       expect(typeof duration).toBe("number");
     });
@@ -121,7 +124,9 @@ spotify:track:789,Lullaby? (Acoustic Version),Album,Artist,210000`;
         "Track URI,Track Name,Album Name,Artist Name(s),Duration (ms)",
       ];
       for (let i = 0; i < 1000; i++) {
-        lines.push(`spotify:track:${i},Song ${i},Album ${i},Artist ${i},${180000 + i}`);
+        lines.push(
+          `spotify:track:${i},Song ${i},Album ${i},Artist ${i},${180000 + i}`,
+        );
       }
       const csvContent = lines.join("\n");
 

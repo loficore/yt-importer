@@ -17,6 +17,7 @@ Import Spotify playlists to YouTube Music.
 ## Setup
 
 1. Install dependencies:
+
    ```bash
    bun install
    ```

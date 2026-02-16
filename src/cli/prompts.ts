@@ -2,11 +2,24 @@ import inquirer from "inquirer";
 import { existsSync } from "node:fs";
 import { glob } from "glob";
 import type { ImportStats, MatchConfidence } from "../types/index.js";
+import { t } from "../utils/i18n.js";
 
 /** 导入选项接口 */
 export interface ImportAnswers {
   /** CSV文件路径 */
   csvPath: string;
+  /** 创建的YouTube Music播放列表名称 */
+  playlistName: string;
+  /** 最小匹配置信度 */
+  minConfidence: MatchConfidence;
+  /** 请求之间的延迟（毫秒） */
+  requestDelay: number;
+  /** 是否跳过确认提示 */
+  skipConfirmation: boolean;
+}
+
+/** 导入配置选项接口（不包含CSV路径） */
+export interface ImportOptionsAnswers {
   /** 创建的YouTube Music播放列表名称 */
   playlistName: string;
   /** 最小匹配置信度 */
@@ -38,12 +51,30 @@ export async function promptForImport(): Promise<ImportAnswers> {
 }
 
 /**
+ * 提示用户输入导入配置选项（不包含CSV路径）
+ * @returns {Promise<ImportOptionsAnswers>} 导入配置选项
+ */
+export async function promptForImportOptions(): Promise<ImportOptionsAnswers> {
+  const playlistName = await promptForPlaylistName();
+  const minConfidence = await promptForMinConfidence();
+  const requestDelay = await promptForDelay();
+  const skipConfirmation = await promptForConfirmation();
+
+  return {
+    playlistName,
+    minConfidence,
+    requestDelay,
+    skipConfirmation,
+  };
+}
+
+/**
  * 提示用户选择或输入CSV文件路径
  * @returns {Promise<string>} 用户选择或输入的CSV文件路径
  * @throws {Error} 如果用户输入的路径无效或文件不存在
  * @description 首先搜索当前目录及子目录中的CSV文件，并让用户选择。如果没有找到文件或用户选择浏览，则提示用户输入路径，并验证输入的有效性。
  */
-async function promptForCsvFile(): Promise<string> {
+export async function promptForCsvFile(): Promise<string> {
   const csvFiles = await findCsvFiles();
 
   if (csvFiles.length > 0) {
@@ -51,9 +82,9 @@ async function promptForCsvFile(): Promise<string> {
       {
         type: "list",
         name: "selectedFile",
-        message: "Select a CSV file to import:",
+        message: t("csv_select"),
         choices: [
-          { name: "Browse for another file...", value: "browse" },
+          { name: t("csv_browse"), value: "browse" },
           new inquirer.Separator(),
           ...csvFiles.map((file) => ({
             name: file,
@@ -72,29 +103,123 @@ async function promptForCsvFile(): Promise<string> {
     {
       type: "input",
       name: "customPath",
-      message: "Enter the path to your CSV file:",
+      message: t("csv_enter_path"),
       /**
-       * 验证用户输入的路径是否有效：
-       * @param {string} input - 用户输入的文件路径
-       * @returns {boolean|string} 如果路径有效，返回true；否则返回错误消息字符串
-       * @description 验证逻辑包括检查输入是否为空、文件是否存在以及文件扩展名是否为.csv。
+       * 验证用户输入的CSV文件路径是否有效：
+       * @type {string} 用户输入的CSV文件路径
+       * @returns {boolean|string} 如果输入有效，返回true；否则返回错误消息字符串
        */
       validate: (input: string) => {
+        /** @type {boolean | string} */
+        let result: boolean | string = true;
         if (!input.trim()) {
-          return "Please enter a file path";
+          result = t("csv_validate_empty");
+        } else if (!existsSync(input)) {
+          result = t("csv_validate_not_found");
+        } else if (!input.endsWith(".csv")) {
+          result = t("csv_validate_extension");
         }
-        if (!existsSync(input)) {
-          return "File not found. Please enter a valid path";
-        }
-        if (!input.endsWith(".csv")) {
-          return "File should have a .csv extension";
-        }
-        return true;
+        return result;
       },
     },
   ]);
 
   return customPath;
+}
+
+/**
+ * 提示用户选择多个CSV文件进行批量导入
+ * @returns {Promise<string[]>} 用户选择的CSV文件路径数组
+ */
+export async function promptForMultipleCsvFiles(): Promise<string[]> {
+  const csvFiles = await findCsvFiles();
+
+  if (csvFiles.length === 0) {
+    const { customPath } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "customPath",
+        message: t("csv_enter_path"),
+        /**
+         *  验证用户输入的CSV文件路径是否有效：
+         * @param {string} input - 用户输入的CSV文件路径
+         * @returns {boolean|string} - 如果输入有效，返回true；否则返回错误消息字符串
+         */
+        validate: (input: string) => {
+          /** @type {boolean | string} */
+          let result: boolean | string = true;
+          if (!input.trim()) {
+            result = t("csv_validate_empty");
+          } else if (!existsSync(input)) {
+            result = t("csv_validate_not_found");
+          } else if (!input.endsWith(".csv")) {
+            result = t("csv_validate_extension");
+          }
+          return result;
+        },
+      },
+    ]);
+    return [customPath];
+  }
+
+  const { selectedFiles } = await inquirer.prompt([
+    {
+      type: "checkbox",
+      name: "selectedFiles",
+      message: t("csv_select_multiple"),
+      /**
+       * 验证用户选择的CSV文件路径是否有效：
+       * @param {string[]} input - 用户选择的CSV文件路径数组
+       * @returns {boolean|string} - 如果输入有效，返回true；否则返回错误消息字符串
+       */
+      validate: (input: string[]) => {
+        if (input.length === 0) {
+          return "Please select at least one file";
+        }
+        return true;
+      },
+      choices: [
+        ...csvFiles.map((file) => ({
+          name: file,
+          value: file,
+          checked: false,
+        })),
+        new inquirer.Separator(),
+        { name: t("csv_browse"), value: "browse", checked: false },
+      ],
+    },
+  ]);
+
+  if (Array.isArray(selectedFiles) && selectedFiles.includes("browse")) {
+    const { customPath } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "customPath",
+        message: t("csv_enter_path"),
+        /**
+         * 验证用户输入的CSV文件路径是否有效：
+         * @param {string} input - 用户输入的CSV文件路径
+         * @returns {boolean|string} - 如果输入有效，返回true；否则返回错误消息字符串
+         */
+        validate: (input: string) => {
+          /** @type {boolean | string} */
+          let result: boolean | string = true;
+          if (!input.trim()) {
+            result = t("csv_validate_empty");
+          } else if (!existsSync(input)) {
+            result = t("csv_validate_not_found");
+          } else if (!input.endsWith(".csv")) {
+            result = t("csv_validate_extension");
+          }
+          return result;
+        },
+      },
+    ]);
+    const filteredFiles = selectedFiles.filter((f: string) => f !== "browse");
+    return [...filteredFiles, customPath];
+  }
+
+  return selectedFiles;
 }
 
 /**
@@ -121,8 +246,8 @@ async function promptForPlaylistName(): Promise<string> {
     {
       type: "input",
       name: "name",
-      message: "Enter a name for the new YouTube Music playlist:",
-      default: "Imported from Spotify",
+      message: t("playlist_name"),
+      default: t("playlist_default"),
     },
   ]);
 
@@ -138,7 +263,7 @@ async function promptForMinConfidence(): Promise<MatchConfidence> {
     {
       type: "list",
       name: "confidence",
-      message: "Minimum match confidence:",
+      message: t("confidence"),
       choices: [
         {
           name: "High (exact match only)",
@@ -170,7 +295,7 @@ async function promptForDelay(): Promise<number> {
     {
       type: "number",
       name: "delay",
-      message: "Delay between requests (milliseconds):",
+      message: t("request_delay"),
       default: 1500,
       /**
        * 验证用户输入的延迟时间是否有效：
@@ -198,7 +323,7 @@ async function promptForConfirmation(): Promise<boolean> {
     {
       type: "confirm",
       name: "skip",
-      message: "Skip confirmation prompts for low-confidence matches?",
+      message: t("skip_confirmation"),
       default: false,
     },
   ]);
@@ -302,15 +427,17 @@ export async function selectMatch(
  */
 export function printSummary(stats: ImportStats): void {
   console.log(`\n${"=".repeat(40)}`);
-  console.log("           IMPORT SUMMARY");
+  console.log(`           ${t("summary_title")}`);
   console.log("=".repeat(40));
-  console.log(`  Total tracks:      ${stats.total}`);
-  console.log(`  Matched:           ${stats.matched}`);
-  console.log(`    - High:         ${stats.highConfidence}`);
-  console.log(`    - Medium:       ${stats.mediumConfidence}`);
-  console.log(`    - Low:          ${stats.lowConfidence}`);
-  console.log(`  Unmatched:         ${stats.unmatched}`);
-  console.log(`  Duration:          ${Math.round(stats.duration / 1000)}s`);
+  console.log(`  ${t("summary_total")}:      ${stats.total}`);
+  console.log(`  ${t("summary_matched")}:           ${stats.matched}`);
+  console.log(`    - ${t("summary_high")}:         ${stats.highConfidence}`);
+  console.log(`    - ${t("summary_medium")}:       ${stats.mediumConfidence}`);
+  console.log(`    - ${t("summary_low")}:          ${stats.lowConfidence}`);
+  console.log(`  ${t("summary_unmatched")}:         ${stats.unmatched}`);
+  console.log(
+    `  ${t("summary_duration")}:          ${Math.round(stats.duration / 1000)}s`,
+  );
   console.log("=".repeat(40));
 }
 

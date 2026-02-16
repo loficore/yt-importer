@@ -98,6 +98,11 @@ export function nameSimilarity(s1: string, s2: string): number {
  * @returns {boolean} 如果艺术家名称匹配，则返回true；否则返回false
  */
 export function artistMatch(trackArtist: string, ytArtist: string): boolean {
+  /**
+   * 将艺术家字符串分割成数组
+   * @param {string} value - 艺术家字符串
+   * @returns {string[]} 分割后的艺术家数组
+   */
   const splitArtists = (value: string): string[] =>
     normalizeString(value)
       .replace(/\b(feat|ft|featuring|x|and)\b/gu, ",")
@@ -110,7 +115,11 @@ export function artistMatch(trackArtist: string, ytArtist: string): boolean {
   const normalizedYt = normalizeString(ytArtist);
 
   if (normalizedTrack === normalizedYt) return true;
-  if (normalizedYt.includes(normalizedTrack) || normalizedTrack.includes(normalizedYt)) return true;
+  if (
+    normalizedYt.includes(normalizedTrack) ||
+    normalizedTrack.includes(normalizedYt)
+  )
+    return true;
 
   const trackArtists = splitArtists(trackArtist);
   const ytArtists = splitArtists(ytArtist);
@@ -237,7 +246,8 @@ export function filterByConfidence(
 ): MatchResult[] {
   const confidenceOrder: MatchConfidence[] = ["none", "low", "medium", "high"];
   const minIndex = confidenceOrder.indexOf(minConfidence);
-  return results.filter(
-    (r) => confidenceOrder.indexOf(r.confidence) >= minIndex,
-  );
+  return results.filter((r): boolean => {
+    const idx = confidenceOrder.indexOf(r.confidence);
+    return idx >= minIndex;
+  });
 }

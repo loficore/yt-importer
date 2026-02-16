@@ -1,4 +1,17 @@
 import { z } from "zod";
+import type {
+  MatchConfidence,
+  Language,
+  ImporterConfig,
+} from "../utils/config.js";
+import {
+  MatchConfidenceEnum,
+  LanguageEnum,
+  ImporterConfigSchema,
+} from "../utils/config.js";
+
+export type { MatchConfidence, Language, ImporterConfig };
+export { MatchConfidenceEnum, LanguageEnum, ImporterConfigSchema };
 
 export const SpotifyTrackSchema = z.object({
   uri: z.string(),
@@ -13,7 +26,6 @@ export const SpotifyTrackSchema = z.object({
   recordLabel: z.string().optional(),
 });
 
-/** 表示Spotify曲目的类型*/
 export type SpotifyTrack = z.infer<typeof SpotifyTrackSchema>;
 
 export const YouTubeSongSchema = z.object({
@@ -33,18 +45,10 @@ export const YouTubeSongSchema = z.object({
     .optional(),
 });
 
-/** 表示YouTube歌曲的类型*/
 export type YouTubeSong = z.infer<typeof YouTubeSongSchema>;
-
-/**表示搜索置信度 */
-export const MatchConfidenceEnum = z.enum(["high", "medium", "low", "none"]);
-
-/** 表示搜索置信度的类型*/
-export type MatchConfidence = z.infer<typeof MatchConfidenceEnum>;
 
 export const MatchReasonEnum = z.enum(["exact", "fuzzy", "duration", "none"]);
 
-/** 表示搜索原因的类型*/
 export type MatchReason = z.infer<typeof MatchReasonEnum>;
 
 export const MatchResultSchema = z.object({
@@ -56,9 +60,6 @@ export const MatchResultSchema = z.object({
   matchedArtist: z.string().optional(),
 });
 
-/**
- * 表示匹配结果的类型
- */
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
 export const PlaylistSchema = z.object({
@@ -68,9 +69,6 @@ export const PlaylistSchema = z.object({
   videoIds: z.array(z.string()),
 });
 
-/**
- * 表示播放列表的类型
- */
 export type Playlist = z.infer<typeof PlaylistSchema>;
 
 export const ImportProgressSchema = z.object({
@@ -84,28 +82,57 @@ export const ImportProgressSchema = z.object({
   timestamp: z.number(),
 });
 
-/**
- * 表示导入进度的类型
- */
 export type ImportProgress = z.infer<typeof ImportProgressSchema>;
 
-export const ImporterConfigSchema = z.object({
-  skipConfirmation: z.boolean().default(false),
-  minConfidence: MatchConfidenceEnum.default("low"),
-  requestDelay: z.number().min(100).max(10000).default(1500),
-  saveProgress: z.boolean().default(true),
-  progressFile: z.string().default("./import-progress.json"),
+export const RunStatusEnum = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "paused",
+]);
+
+export type RunStatus = z.infer<typeof RunStatusEnum>;
+
+export const TrackStatusEnum = z.enum(["matched", "skipped", "failed"]);
+
+export type TrackStatus = z.infer<typeof TrackStatusEnum>;
+
+export const UpsertTrackInputSchema = z.object({
+  runId: z.string(),
+  trackKey: z.string(),
+  track: SpotifyTrackSchema,
+  matchResult: MatchResultSchema,
+  status: TrackStatusEnum,
+  errorMessage: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 
-/**
- * 表示导入器配置的类型
- */
-export type ImporterConfig = z.infer<typeof ImporterConfigSchema>;
+export type UpsertTrackInput = z.infer<typeof UpsertTrackInputSchema>;
+
+export const ProgressRunSchema = z.object({
+  runId: z.string(),
+  csvPath: z.string(),
+  createdAt: z.number(),
+  status: RunStatusEnum,
+  totalTracks: z.number(),
+  processedTracks: z.number(),
+  matchedTracks: z.number(),
+  failedTracks: z.number(),
+  skippedTracks: z.number(),
+  playlistId: z.string().optional(),
+});
+
+export type ProgressRun = z.infer<typeof ProgressRunSchema>;
+
+export interface RunStatsDelta {
+  processedTracks?: number;
+  matchedTracks?: number;
+  failedTracks?: number;
+  skippedTracks?: number;
+}
 
 export const CookiesSchema = z.record(z.string(), z.string());
-/**
- * 表示Cookies的类型
- */
+
 export type Cookies = z.infer<typeof CookiesSchema>;
 
 export const ImportStatsSchema = z.object({
@@ -120,5 +147,4 @@ export const ImportStatsSchema = z.object({
   duration: z.number(),
 });
 
-/** 表示导入统计的类型*/
 export type ImportStats = z.infer<typeof ImportStatsSchema>;

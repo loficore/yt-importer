@@ -71,7 +71,9 @@ describe("types/index.ts", () => {
         name: "Test",
         artist: "Artist",
         album: "Test Album",
-        thumbnails: [{ url: "https://example.com/img.jpg", width: 120, height: 120 }],
+        thumbnails: [
+          { url: "https://example.com/img.jpg", width: 120, height: 120 },
+        ],
       };
       const result = YouTubeSongSchema.parse(song);
       expect(result.album).toBe("Test Album");
