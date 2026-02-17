@@ -1,13 +1,9 @@
-import inquirer from "inquirer";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { Importer } from "./core/importer.js";
 import {
-  ImporterConfigSchema,
   validateConfig,
   setDefaultConfig,
-  getConfig,
-  type ImporterConfig,
 } from "./utils/config.js";
 import type { ImporterOptions } from "./core/importer.js";
 import {
@@ -15,9 +11,17 @@ import {
   promptForImportOptions,
   promptForMultipleCsvFiles,
   confirmImport,
-  printSummary,
 } from "./cli/prompts.js";
 import { DB } from "./utils/db.js";
+import { SearchCache } from "./utils/search-cache.js";
+import {
+  createImportProgressTui,
+  type ImportProgressTuiController,
+} from "./tui/progress.js";
+import {
+  promptMainMenuTui,
+  type MainMenuAction as TuiMainMenuAction,
+} from "./tui/main-menu.js";
 import {
   initI18n,
   t,
@@ -25,6 +29,9 @@ import {
   getCurrentLanguage,
   type Language,
 } from "./utils/i18n.js";
+import { promptSelectList } from "./tui/select-list.js";
+import { promptTextInput } from "./tui/text-input.js";
+import { promptConfirm } from "./tui/confirm.js";
 
 /**
  * 表示匹配结果的类型
@@ -39,7 +46,22 @@ type MainMenuAction =
   | "exit"
   | "language";
 
+/**
+ * 主菜单选项列表,包含每个选项的翻译键和对应的操作值
+ */
+const MENU_CHOICES: { labelKey: string; value: MainMenuAction }[] = [
+  { labelKey: "menu_new_import", value: "new_import" },
+  { labelKey: "menu_batch_import", value: "batch_import" },
+  { labelKey: "menu_resume", value: "resume" },
+  { labelKey: "menu_progress", value: "progress" },
+  { labelKey: "menu_failed", value: "failed" },
+  { labelKey: "menu_settings", value: "settings" },
+  { labelKey: "menu_language", value: "language" },
+  { labelKey: "menu_exit", value: "exit" },
+];
+
 const db = new DB("./import-progress.sqlite");
+const searchCache = new SearchCache("./import-progress.sqlite");
 
 /**
  * 应用程序入口点，显示主菜单并处理用户选择的操作
@@ -47,6 +69,7 @@ const db = new DB("./import-progress.sqlite");
 async function main(): Promise<void> {
   initI18n();
   db.init();
+  searchCache.cleanupExpiredCaches();
   const savedConfig = db.getConfig();
   if (savedConfig.success && savedConfig.data) {
     const language = (
@@ -61,8 +84,6 @@ async function main(): Promise<void> {
       setLanguage(language);
     }
   }
-  console.clear();
-  displayWelcome();
 
   while (true) {
     const action = await promptMainMenu();
@@ -95,37 +116,7 @@ async function main(): Promise<void> {
     }
 
     await promptContinue();
-    console.clear();
-    displayWelcome();
   }
-}
-
-/**
- * 显示欢迎界面和主菜单选项
- */
-function displayWelcome(): void {
-  const lang = getCurrentLanguage();
-  const title = t("welcome_title");
-  const subtitle = t("welcome_subtitle");
-
-  const boxWidth = Math.max(title.length, subtitle.length, 50);
-  const border = "═".repeat(boxWidth + 4);
-
-  console.log(`╔${border}╗`);
-  console.log(`║ ${title.padEnd(boxWidth)} ║`);
-  console.log(`║ ${subtitle.padEnd(boxWidth)} ║`);
-  if (lang !== "en") {
-    const langLabel = `[${lang.toUpperCase()}]`.padEnd(boxWidth);
-    console.log(`║ ${langLabel} ║`);
-  }
-  console.log(`╠${border}╣`);
-  console.log(`║  ${t("menu_new_import").padEnd(boxWidth)}║`);
-  console.log(`║  ${t("menu_resume").padEnd(boxWidth)}║`);
-  console.log(`║  ${t("menu_progress").padEnd(boxWidth)}║`);
-  console.log(`║  ${t("menu_settings").padEnd(boxWidth)}║`);
-  console.log(`║  ${t("menu_exit").padEnd(boxWidth)}║`);
-  console.log(`╚${border}╝`);
-  console.log("");
 }
 
 /**
@@ -133,48 +124,34 @@ function displayWelcome(): void {
  * @returns {Promise<MainMenuAction>} 用户选择的主菜单操作
  */
 async function promptMainMenu(): Promise<MainMenuAction> {
-  const { action } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "action",
-      message: t("main_menu"),
-      choices: [
-        { name: t("menu_new_import"), value: "new_import" },
-        { name: t("menu_batch_import"), value: "batch_import" },
-        { name: t("menu_resume"), value: "resume" },
-        { name: t("menu_progress"), value: "progress" },
-        { name: t("menu_failed"), value: "failed" },
-        { name: t("menu_settings"), value: "settings" },
-        { name: t("menu_language"), value: "language" },
-        new inquirer.Separator(),
-        { name: t("menu_exit"), value: "exit" },
-      ],
-      loop: false,
-    },
-  ]);
-
-  return action;
+  const lang = getCurrentLanguage();
+  const action = await promptMainMenuTui({
+    title: t("welcome_title"),
+    subtitle: t("welcome_subtitle"),
+    langLabel: lang === "en" ? undefined : `[${lang.toUpperCase()}]`,
+    items: MENU_CHOICES.map((item) => ({
+      label: t(item.labelKey),
+      value: item.value as TuiMainMenuAction,
+    })),
+  });
+  // TUI 已经在内部延迟了，这里不需要额外等待
+  return action as MainMenuAction;
 }
 
 /**
  * 处理语言设置，允许用户选择界面语言并保存到数据库
  */
 async function handleLanguage(): Promise<void> {
-  const { lang } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "lang",
-      message: t("language_select"),
-      choices: [
-        { name: t("language_english"), value: "en" },
-        { name: t("language_chinese"), value: "zh-CN" },
-        { name: t("language_japanese"), value: "ja" },
-      ],
-      default: getCurrentLanguage(),
-    },
-  ]);
+  const lang = await promptSelectList<Language>({
+    message: t("language_select"),
+    choices: [
+      { name: t("language_english"), value: "en" },
+      { name: t("language_chinese"), value: "zh-CN" },
+      { name: t("language_japanese"), value: "ja" },
+    ],
+  });
 
-  setLanguage(lang as Language);
+  setLanguage(lang);
   db.upsertConfig({ language: lang });
   console.log(`\n✓ ${t("language_set", { lang })}`);
 }
@@ -186,6 +163,9 @@ async function handleNewImport(): Promise<void> {
   console.log(`\n🚀 ${t("new_import")}\n`);
 
   const answers = await promptForImport();
+  if (!answers) {
+    return;
+  }
 
   if (!existsSync(answers.csvPath)) {
     console.error(t("error_csv_not_found", { path: answers.csvPath }));
@@ -209,6 +189,7 @@ async function handleNewImport(): Promise<void> {
     runId,
     db,
   };
+  let progressTui: ImportProgressTuiController | undefined;
 
   try {
     const importer = new Importer(importerOptions);
@@ -218,6 +199,19 @@ async function handleNewImport(): Promise<void> {
 
     console.log(t("loading_csv"));
     importer.loadCsv();
+
+    if (process.stdout.isTTY) {
+      progressTui = createImportProgressTui({
+        totalTracks: importer.getStats().total,
+        processedTracks: 0,
+        matchedTracks: 0,
+        failedTracks: 0,
+        skippedTracks: 0,
+      });
+      importer.setProgressCallback((payload) => {
+        progressTui?.update(payload);
+      });
+    }
 
     db.createRUN({
       runId,
@@ -265,6 +259,8 @@ async function handleNewImport(): Promise<void> {
   } catch (error) {
     db.updateRunStatus(runId, "failed");
     console.error(t("error_import_failed", { error: String(error) }));
+  } finally {
+    progressTui?.stop();
   }
 }
 
@@ -322,6 +318,7 @@ async function handleResume(): Promise<void> {
     db,
     processedTrackKeys: processedKeys,
   };
+  let progressTui: ImportProgressTuiController | undefined;
 
   try {
     const importer = new Importer(importerOptions);
@@ -331,6 +328,19 @@ async function handleResume(): Promise<void> {
 
     console.log(t("loading_csv"));
     importer.loadCsv();
+
+    if (process.stdout.isTTY) {
+      progressTui = createImportProgressTui({
+        totalTracks: importer.getStats().total,
+        processedTracks: 0,
+        matchedTracks: 0,
+        failedTracks: 0,
+        skippedTracks: 0,
+      });
+      importer.setProgressCallback((payload) => {
+        progressTui?.update(payload);
+      });
+    }
 
     console.log(`\n${t("resuming_session")}\n`);
 
@@ -367,6 +377,8 @@ async function handleResume(): Promise<void> {
   } catch (error) {
     db.updateRunStatus(run.run_id, "failed");
     console.error(t("error_import_failed", { error: String(error) }));
+  } finally {
+    progressTui?.stop();
   }
 }
 
@@ -398,9 +410,19 @@ async function handleViewProgress(): Promise<void> {
  * 处理批量导入
  */
 async function handleBatchImport(): Promise<void> {
+  // 清空一行，确保从 TUI 切换后终端状态正确
+  if (process.stdout.isTTY) {
+    process.stdout.write("\n");
+    // 额外等待，确保终端完全准备好接受 inquirer 输入
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  
   console.log(`\n📚 ${t("batch_import")}\n`);
 
   const csvFiles = await promptForMultipleCsvFiles();
+  if (!csvFiles) {
+    return;
+  }
 
   if (csvFiles.length === 0) {
     console.log(`\n${t("batch_no_files")}`);
@@ -424,16 +446,34 @@ async function handleBatchImport(): Promise<void> {
         .pop()
         ?.replace(/\.csv$/, "") || "Playlist";
 
-    const { name } = await inquirer.prompt([
-      {
-        type: "input",
-        name: "name",
-        message: t("batch_playlist_prompt", { file: fileName }),
-        default: fileName,
-      },
-    ]);
+    const action = await promptSelectList({
+      message: t("batch_playlist_action", { file: fileName }),
+      choices: [
+        {
+          name: t("batch_playlist_use_default", { default: fileName }),
+          value: "default",
+        },
+        { name: t("batch_playlist_enter_name"), value: "custom" },
+        { name: t("menu_back"), value: "back" },
+      ],
+    });
 
-    playlistNames.push((name as string) || fileName);
+    if (action === "back") {
+      return;
+    }
+
+    if (action === "default") {
+      playlistNames.push(fileName);
+      continue;
+    }
+
+    const name = await promptTextInput({
+      message: t("batch_playlist_prompt", { file: fileName }),
+      defaultValue: fileName,
+    });
+
+    const trimmedName = String(name || "").trim();
+    playlistNames.push(trimmedName || fileName);
   }
 
   const config = validateConfig({
@@ -525,7 +565,6 @@ async function handleBatchImport(): Promise<void> {
       if (stats.matched > 0) {
         const proceed = await confirmImport(stats);
         if (proceed) {
-          const playlistSuffix = ` (${i + 1}/${csvFiles.length})`;
           console.log(t("creating_playlist", { name: finalPlaylistName }));
           await importer.createPlaylist(finalPlaylistName);
 
@@ -600,28 +639,57 @@ async function handleViewFailed(): Promise<void> {
 
   console.log("═══════════════════════════════════");
 
-  await inquirer.prompt([
-    {
-      type: "list",
-      name: "action",
-      message: t("failed_menu_action"),
-      choices: [{ name: "↩️ Return to menu", value: "back" }],
-    },
-  ]);
+  await promptSelectList({
+    message: t("failed_menu_action"),
+    choices: [{ name: "↩️ Return to menu", value: "back" }],
+  });
 }
 
 /**
- * 处理设置流程，显示当前的配置选项和说明，允许用户了解如何调整导入器的行为
+ * 处理设置流程，显示当前的配置选项和说明，允许用户调整导入器的行为
  */
-function handleSettings(): void {
-  console.log(`\n${t("settings")}`);
+async function handleSettings(): Promise<void> {
+  const setting = await promptSelectList({
+    message: t("settings"),
+    choices: [
+      { name: t("settings_cookies"), value: "update_cookies" },
+      { name: t("menu_back"), value: "back" },
+    ],
+  });
+
+  if (setting === "update_cookies") {
+    await handleUpdateCookies();
+  }
+}
+
+/**
+ * 处理更新 Cookies 流程
+ */
+async function handleUpdateCookies(): Promise<void> {
+  console.log(`\n${t("cookies_update_title")}`);
   console.log("═══════════════════════════════════");
-  console.log(`  ${t("settings_tip")}`);
-  console.log("  • Minimum confidence: chosen per import");
-  console.log("  • Request delay: chosen per import");
-  console.log("  • Progress file: ./import-progress.json");
-  console.log("═══════════════════════════════════");
-  console.log("");
+  console.log(t("cookies_update_steps_1"));
+  console.log(t("cookies_update_steps_2"));
+  console.log(t("cookies_update_steps_3"));
+  console.log(t("cookies_update_steps_4"));
+  console.log(t("cookies_update_steps_5"));
+  console.log(t("cookies_update_steps_6"));
+  console.log("═══════════════════════════════════\n");
+
+  const cookiePath = "config/cookies.json";
+  if (existsSync(cookiePath)) {
+    console.log(`✓ ${t("cookies_file_found")}`);
+    const proceed = await promptConfirm({
+      message: t("cookies_update_prompt"),
+      defaultValue: false,
+    });
+
+    if (proceed) {
+      console.log(`✓ ${t("cookies_updated")}`);
+    }
+  } else {
+    console.log(`⚠ ${t("cookies_file_missing")}`);
+  }
 }
 
 /**
@@ -655,28 +723,23 @@ async function selectRun(): Promise<{
     return null;
   }
 
-  const { selected } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "selected",
-      message: t("menu_resume"),
-      choices: runs.map((run) => {
-        const row = run as {
-          /** 运行id */
-          run_id: string;
-          /** csv文件路径 */
-          csv_path: string;
-          /** 创建时间 */
-          created_at: string;
-          /** 运行状态，可能的值包括 "running"、"completed" 和 "failed" */
-          status: string;
-        };
-        const label = `${row.csv_path} | ${row.created_at} | ${row.status}`;
-        return { name: label, value: run };
-      }),
-      loop: false,
-    },
-  ]);
+  const { selected } = await promptSelectList({
+    message: t("menu_resume"),
+    choices: runs.map((run) => {
+      const row = run as {
+        /** 运行id */
+        run_id: string;
+        /** csv文件路径 */
+        csv_path: string;
+        /** 创建时间 */
+        created_at: string;
+        /** 运行状态，可能的值包括 "running"、"completed" 和 "failed" */
+        status: string;
+      };
+      const label = `${row.csv_path} | ${row.created_at} | ${row.status}`;
+      return { name: label, value: run };
+    }),
+  });
 
   return selected as {
     /** 运行id */
@@ -704,13 +767,9 @@ async function selectRun(): Promise<{
  * 处理查看进度流程，显示之前导入会话的进度信息
  */
 async function promptContinue(): Promise<void> {
-  await inquirer.prompt([
-    {
-      type: "input",
-      name: "continue",
-      message: t("press_enter"),
-    },
-  ]);
+  // 在 TTY 模式下跳过额外的确认提示，直接返回主菜单
+  // 添加延迟以确保 TUI 完全清理
+  await new Promise((resolve) => setTimeout(resolve, 150));
 }
 
-main();
+void main();

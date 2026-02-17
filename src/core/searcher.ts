@@ -49,15 +49,11 @@ class Searcher {
     }
 
     const results = [];
-    try {
-      for (const q of query) {
-        const searchResults = await this.innertube.music.search(q, {
-          type: "song",
-        });
-        results.push(searchResults);
-      }
-    } catch (e) {
-      console.error("搜索过程中发生错误:", e);
+    for (const q of query) {
+      const searchResults = await this.innertube.music.search(q, {
+        type: "song",
+      });
+      results.push(searchResults);
     }
 
     return Promise.resolve(results);

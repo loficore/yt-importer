@@ -5,6 +5,7 @@ import { matchTrackToResults } from "./matcher.js";
 import { t } from "../utils/i18n.js";
 import type { DB } from "../utils/db.js";
 import { DEFAULT_CONFIG, type ImporterConfig } from "../utils/config.js";
+import { SearchCache } from "../utils/search-cache.js";
 import type {
   SpotifyTrack,
   YouTubeSong,
@@ -28,6 +29,24 @@ export interface ImporterOptions {
   db?: DB;
   /** 已处理曲目key集合（可选） */
   processedTrackKeys?: Set<string>;
+  /** 导入进度回调（可选） */
+  onProgress?: (payload: ImporterProgressPayload) => void;
+}
+
+/** 导入进度回调载荷 */
+export interface ImporterProgressPayload {
+  /** 总曲目数 */
+  totalTracks: number;
+  /** 已处理曲目数 */
+  processedTracks: number;
+  /** 已匹配曲目数 */
+  matchedTracks: number;
+  /** 失败曲目数 */
+  failedTracks: number;
+  /** 跳过曲目数 */
+  skippedTracks: number;
+  /** 当前处理曲目描述 */
+  currentTrack?: string;
 }
 
 /** CSV记录接口 */
@@ -57,6 +76,8 @@ export class Importer {
   private runId?: string;
   private db?: DB;
   private processedTrackKeys: Set<string>;
+  private searchCache?: SearchCache;
+  private onProgress?: (payload: ImporterProgressPayload) => void;
 
   /**
    * 构造函数
@@ -91,6 +112,10 @@ export class Importer {
     this.runId = options.runId;
     this.db = options.db;
     this.processedTrackKeys = options.processedTrackKeys ?? new Set();
+    this.onProgress = options.onProgress;
+    if (this.config.enableCache) {
+      this.searchCache = new SearchCache(this.config.cachePath);
+    }
     if (this.processedTrackKeys.size > 0) {
       this.progress.processedTracks = this.processedTrackKeys.size;
     }
@@ -103,11 +128,58 @@ export class Importer {
   async init(): Promise<void> {
     const cookiePath = "config/cookies.json";
     if (existsSync(cookiePath)) {
-      await this.searcher.init({}, cookiePath);
-      console.log("✓ Searcher initialized with cookies");
+      try {
+        await this.searcher.init({}, cookiePath);
+        console.log("✓ Searcher initialized with cookies");
+        await this.validateCookies();
+      } catch (error) {
+        if (this.isAuthenticationError(error)) {
+          console.error(
+            t("cookies_expired", {
+              reason: this.getErrorMessage(error),
+            }),
+          );
+          throw new Error(
+            "Cookies are invalid or expired. Please update config/cookies.json",
+            { cause: error },
+          );
+        }
+        throw error;
+      }
     } else {
       await this.searcher.init({ lang: "en", location: "US" }, "");
       console.log("✓ Searcher initialized without cookies");
+    }
+  }
+
+  /**
+   * 验证 Cookies 是否有效
+   * @returns {Promise<void>}
+   */
+  async validateCookies(): Promise<void> {
+    try {
+      // 用一个简单的测试查询来验证认证
+      const testQuery = "test";
+      const searchResults = await this.searcher.searchSongs([testQuery]);
+      const songs = this.extractSongsFromResults(searchResults);
+      if (songs && Array.isArray(songs)) {
+        console.log("✓ Cookies validation passed");
+        return;
+      }
+    } catch (error) {
+      if (this.isAuthenticationError(error)) {
+        console.error(
+          t("cookies_expired", {
+            reason: this.getErrorMessage(error),
+          }),
+        );
+        throw new Error(
+          "Cookies are invalid or expired. Please update config/cookies.json",
+          { cause: error },
+        );
+      }
+      // 非认证错误可以忽略，因为网络问题不代表 Cookies 失效
+      console.warn("⚠ Cookies validation skipped due to network issue");
     }
   }
 
@@ -135,6 +207,7 @@ export class Importer {
 
     this.progress.totalTracks = this.tracks.length;
     console.log(t("loaded_tracks", { count: String(this.tracks.length) }));
+    this.emitProgress();
   }
 
   /**
@@ -166,12 +239,10 @@ export class Importer {
       console.log(
         `\n[${i + 1}/${this.tracks.length}] Processing: ${track.name} - ${track.artist}`,
       );
+      this.emitProgress(`${track.name} - ${track.artist}`);
 
       try {
-        const searchResults = await this.searcher.searchSongs([
-          `${track.name} ${track.artist}`,
-        ]);
-        const ytSongs = this.extractSongsFromResults(searchResults);
+        const ytSongs = await this.searchSongsWithRetry(track);
         const matchResult = matchTrackToResults(track, ytSongs);
 
         results.push(matchResult);
@@ -208,6 +279,7 @@ export class Importer {
         this.progress.processedTracks++;
         this.saveProgress();
         this.recordDbProgress(track, trackKey, matchResult, trackStatus);
+        this.emitProgress(`${track.name} - ${track.artist}`);
 
         if (this.config.requestDelay > 0) {
           await new Promise((resolve) =>
@@ -219,10 +291,36 @@ export class Importer {
         this.progress.failedTracks++;
         this.progress.processedTracks++;
         this.recordDbFailure(track, trackKey, String(error));
+        this.emitProgress(`${track.name} - ${track.artist}`);
       }
     }
 
     return results;
+  }
+
+  /**
+   * 设置导入进度回调
+   * @param {(payload: ImporterProgressPayload) => void | undefined} onProgress 进度回调
+   */
+  setProgressCallback(
+    onProgress?: (payload: ImporterProgressPayload) => void,
+  ): void {
+    this.onProgress = onProgress;
+  }
+
+  /**
+   * 发送当前进度
+   * @param {string | undefined} currentTrack 当前曲目
+   */
+  private emitProgress(currentTrack?: string): void {
+    this.onProgress?.({
+      totalTracks: this.progress.totalTracks,
+      processedTracks: this.progress.processedTracks,
+      matchedTracks: this.progress.matchedTracks,
+      failedTracks: this.progress.failedTracks,
+      skippedTracks: this.progress.skippedTracks,
+      currentTrack,
+    });
   }
 
   /**
@@ -415,12 +513,271 @@ export class Importer {
     return 0;
   }
 
+  /**
+   * 重试搜索歌曲
+   * @param {SpotifyTrack} track Spotify曲目对象
+   * @returns {Promise<unknown[]>} 搜索结果数组
+   */
+  private async searchSongsWithRetry(
+    track: SpotifyTrack,
+  ): Promise<YouTubeSong[]> {
+    const queries = this.getSearchQueryVariants(track);
+    let lastError: unknown = null;
+    let hadSuccessfulSearch = false;
+
+    for (let qIndex = 0; qIndex < queries.length; qIndex += 1) {
+      const query = queries[qIndex];
+      if (!query) continue;
+      let attempt = 0;
+
+      if (this.searchCache) {
+        const cached = this.searchCache.get(query);
+        if (cached) {
+          if (cached.length > 0) {
+            return cached;
+          }
+          console.warn(t("search_no_results", { query }));
+          if (qIndex < queries.length - 1) {
+            console.warn(
+              t("search_fallback", {
+                query: queries[qIndex + 1] ?? "",
+              }),
+            );
+          }
+          continue;
+        }
+      }
+
+      while (attempt <= this.config.maxRetries) {
+        try {
+          const searchResults = await this.searcher.searchSongs([query]);
+          const songs = this.extractSongsFromResults(searchResults);
+          hadSuccessfulSearch = true;
+          if (this.searchCache) {
+            this.searchCache.set(query, songs);
+          }
+          if (songs.length > 0) {
+            return songs;
+          }
+          console.warn(t("search_no_results", { query }));
+          break;
+        } catch (error) {
+          lastError = error;
+
+          // 认证错误不重试，直接失败并提示用户
+          if (this.isAuthenticationError(error)) {
+            console.error(
+              t("cookies_expired", {
+                reason: this.getErrorMessage(error),
+              }),
+            );
+            throw error;
+          }
+
+          const retryable = this.isRetryableError(error);
+          if (!retryable || attempt >= this.config.maxRetries) {
+            break;
+          }
+
+          const delayMs = this.getRetryDelayMs(attempt, error);
+          const reasonKey = this.isRateLimitError(error)
+            ? "search_retry_reason_rate_limited"
+            : "search_retry_reason_error";
+          console.warn(
+            t("search_retrying", {
+              reason: t(reasonKey),
+              attempt: String(attempt + 1),
+              max: String(this.config.maxRetries),
+              seconds: String(Math.round(delayMs / 1000)),
+            }),
+          );
+          await this.sleep(delayMs);
+          attempt += 1;
+        }
+      }
+
+      if (qIndex < queries.length - 1) {
+        console.warn(
+          t("search_fallback", {
+            query: queries[qIndex + 1] ?? "",
+          }),
+        );
+      }
+    }
+
+    if (hadSuccessfulSearch) {
+      return [];
+    }
+
+    throw (lastError as Error) ?? new Error("Search failed after retries");
+  }
+
+  /**
+   * 生成搜索查询变体
+   * @param {SpotifyTrack} track Spotify曲目对象
+   * @returns {string[]} 搜索查询变体数组
+   */
+  private getSearchQueryVariants(track: SpotifyTrack): string[] {
+    const queries = [`${track.name} ${track.artist}`.trim()];
+    if (track.name) {
+      queries.push(track.name.trim());
+    }
+    if (track.artist) {
+      queries.push(track.artist.trim());
+    }
+
+    const deduped = new Set<string>();
+    for (const q of queries) {
+      if (q) deduped.add(q);
+    }
+    return Array.from(deduped);
+  }
+
+  /**
+   * 计算重试延迟时间
+   * @param {number} attempt 当前尝试次数
+   * @param {unknown} error 错误对象
+   * @returns {number} 延迟时间（毫秒）
+   */
+  private getRetryDelayMs(attempt: number, error: unknown): number {
+    const baseDelay = this.config.retryDelay;
+    const backoff = baseDelay * Math.pow(2, attempt);
+    const jitter = Math.floor(Math.random() * 250);
+    const rateLimitMultiplier = this.isRateLimitError(error) ? 2 : 1;
+    return backoff * rateLimitMultiplier + jitter;
+  }
+
+  /**
+   * 判断错误是否可重试
+   * @param {unknown} error 错误对象
+   * @returns {boolean} 是否可重试
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (this.isRateLimitError(error)) return true;
+
+    const message = this.getErrorMessage(error).toLowerCase();
+    return (
+      message.includes("timeout") ||
+      message.includes("timed out") ||
+      message.includes("econnreset") ||
+      message.includes("econnrefused") ||
+      message.includes("network") ||
+      message.includes("temporarily unavailable")
+    );
+  }
+
+  /**
+   * 判断错误是否为认证错误（401/403）
+   * @param {unknown} error 错误对象
+   * @returns {boolean} 是否为认证错误
+   */
+  private isAuthenticationError(error: unknown): boolean {
+    if (!error) return false;
+    if (typeof error === "string") {
+      return (
+        error.includes("401") ||
+        error.includes("403") ||
+        error.toLowerCase().includes("unauthorized") ||
+        error.toLowerCase().includes("forbidden")
+      );
+    }
+
+    const candidate = error as {
+      /** 连接状态 */
+      status?: number;
+      /** HTTP状态码 */
+      statusCode?: number;
+      /** 错误代码 */
+      code?: number | string;
+      /** 错误消息 */
+      message?: string;
+    };
+    if (candidate.status === 401 || candidate.statusCode === 401) return true;
+    if (candidate.status === 403 || candidate.statusCode === 403) return true;
+    if (candidate.code === 401 || candidate.code === "401") return true;
+    if (candidate.code === 403 || candidate.code === "403") return true;
+
+    const message = this.getErrorMessage(error).toLowerCase();
+    return (
+      message.includes("401") ||
+      message.includes("403") ||
+      message.includes("unauthorized") ||
+      message.includes("forbidden") ||
+      message.includes("access denied")
+    );
+  }
+
+  /**
+   * 判断错误是否为速率限制错误
+   * @param {unknown} error 错误对象
+   * @returns {boolean} 是否为速率限制错误
+   */
+  private isRateLimitError(error: unknown): boolean {
+    if (!error) return false;
+    if (typeof error === "string") {
+      return error.includes("429") || error.toLowerCase().includes("too many");
+    }
+
+    const candidate = error as {
+      /** 连接状态 */
+      status?: number;
+      /** HTTP状态码 */
+      statusCode?: number;
+      /** 错误代码 */
+      code?: number | string;
+      /** 错误消息 */
+      message?: string;
+    };
+    if (candidate.status === 429 || candidate.statusCode === 429) return true;
+    if (candidate.code === 429 || candidate.code === "429") return true;
+
+    const message = this.getErrorMessage(error).toLowerCase();
+    return message.includes("429") || message.includes("too many requests");
+  }
+
+  /**
+   * 从错误对象中提取错误消息
+   * @param {unknown} error 错误对象
+   * @returns {string} 错误消息
+   */
+  private getErrorMessage(error: unknown): string {
+    if (!error) return "";
+    if (typeof error === "string") return error;
+    if (error instanceof Error) return error.message;
+    const candidate = error as {
+      /** 错误消息 */
+      message?: string;
+    };
+    return candidate.message ?? "";
+  }
+
+  /**
+   * 睡眠指定时间
+   * @param {number} ms 毫秒数
+   * @returns {Promise<void>}
+   */
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 生成曲目唯一键
+   * @param {SpotifyTrack} track Spotify曲目对象
+   * @returns {string} 曲目唯一键
+   */
   private getTrackKey(track: SpotifyTrack): string {
     const uri = track.uri?.trim();
     if (uri) return uri;
     return `${track.name}|${track.artist}|${track.duration}`;
   }
 
+  /**
+   * 记录数据库进度
+   * @param {SpotifyTrack} track Spotify曲目对象
+   * @param {string} trackKey 曲目唯一键
+   * @param {MatchResult} matchResult 匹配结果对象
+   * @param {"matched" | "skipped" | "failed"} status 匹配状态
+   */
   private recordDbProgress(
     track: SpotifyTrack,
     trackKey: string,
@@ -445,6 +802,12 @@ export class Importer {
     });
   }
 
+  /**
+   * 记录数据库失败信息
+   * @param {SpotifyTrack} track Spotify曲目对象
+   * @param {string} trackKey 曲目唯一键
+   * @param {string} errorMessage 错误消息
+   */
   private recordDbFailure(
     track: SpotifyTrack,
     trackKey: string,

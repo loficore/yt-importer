@@ -21,6 +21,8 @@
       "@types/*": ["src/types/*"]
     },
 
+    "types": ["bun-types"],
+
     // Best practices
     "strict": true,
     "skipLibCheck": true,
