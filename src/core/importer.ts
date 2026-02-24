@@ -1,15 +1,16 @@
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { parse } from "csv-parse/sync";
 import Searcher from "./searcher.js";
-import { matchTrackToResults } from "./matcher.js";
+import { matchTrackWithCandidates } from "./matcher.js";
 import { t } from "../utils/i18n.js";
 import type { DB } from "../utils/db.js";
 import { DEFAULT_CONFIG, type ImporterConfig } from "../utils/config.js";
-import { SearchCache } from "../utils/search-cache.js";
+import { SearchCache } from "../utils/searchCache.js";
 import type {
   SpotifyTrack,
   YouTubeSong,
   MatchResult,
+  MatchResultWithCandidates,
   ImportProgress,
   ImportStats,
   MatchConfidence,
@@ -78,6 +79,7 @@ export class Importer {
   private processedTrackKeys: Set<string>;
   private searchCache?: SearchCache;
   private onProgress?: (payload: ImporterProgressPayload) => void;
+  private pendingLowConfidence: MatchResultWithCandidates[] = [];
 
   /**
    * 构造函数
@@ -127,9 +129,14 @@ export class Importer {
    */
   async init(): Promise<void> {
     const cookiePath = "config/cookies.json";
+    const innertubeOptions = {
+      lang: "en",
+      location: "US",
+      proxy: this.config.proxyUrl,
+    };
     if (existsSync(cookiePath)) {
       try {
-        await this.searcher.init({}, cookiePath);
+        await this.searcher.init(innertubeOptions, cookiePath);
         console.log("✓ Searcher initialized with cookies");
         await this.validateCookies();
       } catch (error) {
@@ -147,7 +154,7 @@ export class Importer {
         throw error;
       }
     } else {
-      await this.searcher.init({ lang: "en", location: "US" }, "");
+      await this.searcher.init(innertubeOptions, "");
       console.log("✓ Searcher initialized without cookies");
     }
   }
@@ -243,7 +250,7 @@ export class Importer {
 
       try {
         const ytSongs = await this.searchSongsWithRetry(track);
-        const matchResult = matchTrackToResults(track, ytSongs);
+        const matchResult = matchTrackWithCandidates(track, ytSongs);
 
         results.push(matchResult);
         this.progress.matchResults.push(matchResult);
@@ -267,8 +274,12 @@ export class Importer {
         } else if (matchResult.confidence !== "none" && !meetsThreshold) {
           this.progress.skippedTracks++;
           trackStatus = "skipped";
+          this.pendingLowConfidence.push(matchResult);
           console.log(
             `  ⊘ Skipped: confidence below threshold (${matchResult.confidence} < ${this.config.minConfidence})`,
+          );
+          console.log(
+            `    → Added to pending low confidence queue (${matchResult.candidates.length} candidates)`,
           );
         } else {
           this.progress.failedTracks++;
@@ -403,6 +414,112 @@ export class Importer {
      * @type {{ success: number; failed: number }}
      */
     return { success, failed };
+  }
+
+  /**
+   * 增量导入到已有播放列表
+   * @param {string} playlistId 播放列表ID
+   * @param {MatchResult[]} results 匹配结果数组
+   * @returns {Promise<{ success: number; failed: number; skipped: number; skippedTracks: string[] }>} 成功、失败和跳过的数量及跳过曲目列表
+   */
+  async importToExistingPlaylist(
+    playlistId: string,
+    results: MatchResult[],
+  ): Promise<{
+    /** 成功的数量 */
+    success: number;
+    /** 失败的数量 */
+    failed: number;
+    /** 跳过的数量 */
+    skipped: number;
+    /** 跳过的曲目列表 */
+    skippedTracks: string[];
+  }> {
+    const existingTracks = await this.searcher.getPlaylistTracks(playlistId);
+    const existingVideoIds = new Set(existingTracks.map((t) => t.videoId));
+
+    const confidenceOrder: MatchConfidence[] = [
+      "none",
+      "low",
+      "medium",
+      "high",
+    ];
+    const minIndex = confidenceOrder.indexOf(this.config.minConfidence);
+
+    const newVideoIds: string[] = [];
+    const skippedTracks: string[] = [];
+
+    for (const result of results) {
+      if (result.youtubeSong && result.confidence !== "none") {
+        if (confidenceOrder.indexOf(result.confidence) >= minIndex) {
+          const videoId = result.youtubeSong.videoId;
+          if (existingVideoIds.has(videoId)) {
+            skippedTracks.push(
+              `${result.youtubeSong.name} - ${result.youtubeSong.artist}`,
+            );
+          } else {
+            newVideoIds.push(videoId);
+          }
+        }
+      }
+    }
+
+    console.log(
+      t("incremental_import_summary", {
+        newCount: String(newVideoIds.length),
+        skippedCount: String(skippedTracks.length),
+      }),
+    );
+
+    if (skippedTracks.length > 0) {
+      console.log(`\n${t("skipped_tracks_title")} (${skippedTracks.length}):`);
+      const displayCount = Math.min(skippedTracks.length, 10);
+      for (let i = 0; i < displayCount; i++) {
+        console.log(`  - ${skippedTracks[i]}`);
+      }
+      if (skippedTracks.length > 10) {
+        console.log(`  ... and ${skippedTracks.length - 10} more`);
+      }
+    }
+
+    if (newVideoIds.length === 0) {
+      console.log(t("no_new_tracks_to_import"));
+      return {
+        success: 0,
+        failed: 0,
+        skipped: skippedTracks.length,
+        skippedTracks,
+      };
+    }
+
+    console.log(t("importing_songs", { count: String(newVideoIds.length) }));
+
+    let success = 0;
+    let failed = 0;
+    const batchSize = 50;
+
+    for (let i = 0; i < newVideoIds.length; i += batchSize) {
+      const batch = newVideoIds.slice(i, i + batchSize);
+      try {
+        await this.searcher.addToPlaylist(playlistId, batch);
+        success += batch.length;
+        console.log(
+          `  ✓ Added ${Math.min(i + batchSize, newVideoIds.length)}/${newVideoIds.length} songs`,
+        );
+      } catch {
+        failed += batch.length;
+        console.error(
+          `  ✗ Failed to add batch ${Math.floor(i / batchSize) + 1}`,
+        );
+        if (this.config.requestDelay > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.config.requestDelay),
+          );
+        }
+      }
+    }
+
+    return { success, failed, skipped: skippedTracks.length, skippedTracks };
   }
 
   /**
@@ -911,6 +1028,102 @@ export class Importer {
    */
   getPlaylistId(): string | undefined {
     return this.playlistId;
+  }
+
+  /**
+   * 获取搜索器实例
+   * @returns {Searcher} 搜索器实例
+   */
+  getSearcher(): Searcher {
+    return this.searcher;
+  }
+
+  /**
+   * 获取待解决的低置信度歌曲列表
+   * @returns {MatchResultWithCandidates[]} 待解决的低置信度歌曲列表
+   */
+  getPendingLowConfidence(): MatchResultWithCandidates[] {
+    return this.pendingLowConfidence;
+  }
+
+  /**
+   * 获取所有匹配结果（包含已解决的）
+   * @returns {MatchResult[]} 所有匹配结果数组
+   */
+  getAllResults(): MatchResult[] {
+    return this.progress.matchResults;
+  }
+
+  /**
+   * 解决低置信度歌曲 - 更新匹配结果
+   * @param {number} index pendingLowConfidence 数组中的索引
+   * @param {YouTubeSong | null} selectedSong 用户选择的歌曲，null 表示跳过
+   */
+  resolveLowConfidenceSong(
+    index: number,
+    selectedSong: YouTubeSong | null,
+  ): void {
+    if (index < 0 || index >= this.pendingLowConfidence.length) {
+      return;
+    }
+
+    const pending = this.pendingLowConfidence[index]!;
+    const track = pending.track;
+    const trackKey = this.getTrackKey(track);
+
+    if (selectedSong) {
+      pending.youtubeSong = selectedSong;
+      pending.confidence = "medium";
+      pending.matchReason = "manual";
+      pending.matchedName = selectedSong.name;
+      pending.matchedArtist = selectedSong.artist;
+
+      const existingIndex = this.progress.matchResults.findIndex(
+        (r) => r.track.name === track.name && r.track.artist === track.artist,
+      );
+      if (existingIndex >= 0) {
+        this.progress.matchResults[existingIndex] = pending;
+      }
+
+      this.progress.matchedTracks++;
+      this.progress.skippedTracks--;
+      this.recordDbProgress(track, trackKey, pending, "matched");
+      console.log(
+        `  ✓ Resolved: ${selectedSong.name} - ${selectedSong.artist}`,
+      );
+    } else {
+      console.log(`  ⊘ Skipped: ${track.name} - ${track.artist}`);
+    }
+
+    this.pendingLowConfidence.splice(index, 1);
+    this.saveProgress();
+  }
+
+  /**
+   * 批量导入所有低置信度歌曲（选择第一个候选）
+   * @returns {{ resolved: number; skipped: number }} 解决的数量和跳过的数量
+   */
+  resolveAllLowConfidence(): {
+    /** 已解决的歌曲数量 */
+    resolved: number;
+    /** 已跳过的歌曲数量 */
+    skipped: number;
+  } {
+    let resolved = 0;
+    let skipped = 0;
+
+    while (this.pendingLowConfidence.length > 0) {
+      const pending = this.pendingLowConfidence[0]!;
+      if (pending.candidates.length > 0) {
+        this.resolveLowConfidenceSong(0, pending.candidates[0]!);
+        resolved++;
+      } else {
+        this.resolveLowConfidenceSong(0, null);
+        skipped++;
+      }
+    }
+
+    return { resolved, skipped };
   }
 }
 

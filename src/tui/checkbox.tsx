@@ -1,20 +1,52 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 
+
+/**
+ * 单个复选项的定义。
+ * @template T 值的类型。
+ * @property {string} name 显示名称。
+ * @property {T} value 选项对应的值。
+ * @property {boolean} [checked] 是否默认选中。
+ * @property {boolean} [disabled] 是否禁用该项（不可选择）。
+ */
 export interface CheckboxChoice<T = string> {
+  /** 显示名称，显示在选项列表中。 */
   name: string;
+  /** 选项对应的值，提交时返回。 */
   value: T;
+  /** 是否默认选中，默认为 false。 */
   checked?: boolean;
+  /** 是否禁用该项，禁用项无法选择且显示为灰色。默认为 false。 */
   disabled?: boolean;
 }
 
+/**
+ * `CheckboxView` 组件的 props。
+ * @template T 选项值的类型。
+ * @property {string} message 提示信息，显示在选项上方。
+ * @property {CheckboxChoice<T>[]} choices 可用选项数组。
+ * @property {(values: T[]) => void} onSubmit 提交时调用，参数为已选值数组。
+ * @property {(values: T[]) => boolean | string} [validate] 可选的校验函数，返回 true 或错误消息。
+ */
 interface CheckboxProps<T = string> {
+  /** 提示信息，显示在选项上方。 */
   message: string;
+  /** 可用选项数组。 */
   choices: CheckboxChoice<T>[];
+  /** 提交时调用，参数为已选值数组。 */
   onSubmit: (values: T[]) => void;
+  /** 可选的校验函数，返回 true 或错误消息。 */
   validate?: (values: T[]) => boolean | string;
 }
 
+/**
+ * 在终端渲染的交互式复选列表组件，基于 Ink。
+ * 支持上下键、空格选择、全部切换和取反操作。
+ * @template T 选项值的类型。
+ * @param {CheckboxProps<T>} props 组件属性。
+ * @returns {React.JSX.Element} 渲染的组件。
+ */
 function CheckboxView<T = string>({
   message,
   choices,
@@ -33,14 +65,19 @@ function CheckboxView<T = string>({
     [choices],
   );
 
+  /** 将光标上移到上一个可用选项（循环）。 */
   const onUp = useCallback(() => {
-    setIndex((prev) => (prev - 1 + enabledChoices.length) % enabledChoices.length);
+    setIndex(
+      (prev) => (prev - 1 + enabledChoices.length) % enabledChoices.length,
+    );
   }, [enabledChoices.length]);
 
+  /** 将光标下移到下一个可用选项（循环）。 */
   const onDown = useCallback(() => {
     setIndex((prev) => (prev + 1) % enabledChoices.length);
   }, [enabledChoices.length]);
 
+  /** 切换当前高亮项的选中状态。 */
   const toggleSelection = useCallback(() => {
     const choice = enabledChoices[index];
     if (!choice) return;
@@ -57,6 +94,7 @@ function CheckboxView<T = string>({
     setError(null);
   }, [enabledChoices, index]);
 
+  /** 切换全部选中：若全部已选则清空，否则全选。 */
   const toggleAll = useCallback(() => {
     setSelected((prev) => {
       if (prev.size === enabledChoices.length) {
@@ -67,6 +105,7 @@ function CheckboxView<T = string>({
     setError(null);
   }, [enabledChoices]);
 
+  /** 取反当前选中状态（仅针对可用项）。 */
   const invertSelection = useCallback(() => {
     setSelected((prev) => {
       const next = new Set<T>();
@@ -133,7 +172,7 @@ function CheckboxView<T = string>({
           if (choice.disabled) {
             return (
               <Text key={choiceIndex} dimColor>
-                  {choice.name}
+                {choice.name}
               </Text>
             );
           }
@@ -160,14 +199,26 @@ function CheckboxView<T = string>({
   );
 }
 
+/**
+ * 提示用户选择多个选项并返回选中的值数组。
+ * @template T 选项值类型。
+ * @param {object} params 提示参数
+ * @param {string} params.message 提示信息，显示在选项上方。
+ * @param {CheckboxChoice<T>[]} params.choices 可用选项数组。
+ * @param {(values: T[]) => boolean | string} [params.validate] 可选的校验函数，返回 true 或错误消息。
+ * @returns {Promise<T[]>} 解析为选中的值数组的 Promise
+ */
 export async function promptCheckbox<T = string>(params: {
+  /** 提示信息，显示在选项上方。 */
   message: string;
+  /** 可用选项数组。 */
   choices: CheckboxChoice<T>[];
+  /** 可选的校验函数，返回 true 或错误消息。 */
   validate?: (values: T[]) => boolean | string;
 }): Promise<T[]> {
   // 清空终端
   console.clear();
-  
+
   return new Promise<T[]>((resolve) => {
     const { unmount } = render(
       <CheckboxView
@@ -182,3 +233,4 @@ export async function promptCheckbox<T = string>(params: {
     );
   });
 }
+

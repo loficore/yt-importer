@@ -49,7 +49,13 @@ export const YouTubeSongSchema = z.object({
 /** YouTube歌曲类型 */
 export type YouTubeSong = z.infer<typeof YouTubeSongSchema>;
 
-export const MatchReasonEnum = z.enum(["exact", "fuzzy", "duration", "none"]);
+export const MatchReasonEnum = z.enum([
+  "exact",
+  "fuzzy",
+  "duration",
+  "none",
+  "manual",
+]);
 
 /** 匹配原因类型 */
 export type MatchReason = z.infer<typeof MatchReasonEnum>;
@@ -65,6 +71,16 @@ export const MatchResultSchema = z.object({
 
 /** 匹配结果类型 */
 export type MatchResult = z.infer<typeof MatchResultSchema>;
+
+/** 包含候选列表的匹配结果 */
+export const MatchResultWithCandidatesSchema = MatchResultSchema.extend({
+  candidates: z.array(YouTubeSongSchema).default([]),
+});
+
+/** 带候选列表的匹配结果类型 */
+export type MatchResultWithCandidates = z.infer<
+  typeof MatchResultWithCandidatesSchema
+>;
 
 export const PlaylistSchema = z.object({
   id: z.string(),

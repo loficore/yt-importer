@@ -17,7 +17,7 @@ export default tseslint.config(
 
   // 3. 通用 TypeScript 配置
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     plugins: {
       jsdoc,
     },

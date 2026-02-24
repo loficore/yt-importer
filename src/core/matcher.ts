@@ -4,6 +4,7 @@ import type {
   MatchResult,
   MatchConfidence,
   MatchReason,
+  MatchResultWithCandidates,
 } from "../types/index.js";
 
 /**
@@ -250,4 +251,88 @@ export function filterByConfidence(
     const idx = confidenceOrder.indexOf(r.confidence);
     return idx >= minIndex;
   });
+}
+
+/**
+ * 计算单个候选的匹配信息
+ * @param {SpotifyTrack} track Spotify曲目对象
+ * @param {YouTubeSong} ytSong YouTube曲目对象
+ * @returns {{ confidence: MatchConfidence; reason: MatchReason; score: number }} 匹配信息
+ */
+function computeMatchInfo(
+  track: SpotifyTrack,
+  ytSong: YouTubeSong,
+): {
+  /** 匹配置信度 */
+  confidence: MatchConfidence;
+  /** 匹配原因 */
+  reason: MatchReason;
+  /** 匹配分数 */
+  score: number;
+} {
+  return calculateConfidence(track, ytSong);
+}
+
+/**
+ * 将Spotify曲目与YouTube搜索结果进行匹配，返回包含候选列表的结果
+ * @param {SpotifyTrack} track Spotify曲目对象
+ * @param {YouTubeSong[]} results YouTube搜索结果数组
+ * @param {number} maxCandidates 最大候选数量，默认5
+ * @returns {MatchResultWithCandidates} 带候选列表的匹配结果
+ */
+export function matchTrackWithCandidates(
+  track: SpotifyTrack,
+  results: YouTubeSong[],
+  maxCandidates = 5,
+): MatchResultWithCandidates {
+  if (results.length === 0) {
+    return {
+      track,
+      youtubeSong: null,
+      confidence: "none",
+      matchReason: "none",
+      candidates: [],
+    };
+  }
+
+  const scoredResults: {
+    /** YouTube歌曲对象 */
+    song: YouTubeSong;
+    /** 匹配置信度 */
+    confidence: MatchConfidence;
+    /** 匹配原因 */
+    reason: MatchReason;
+    /** 匹配分数 */
+    score: number;
+  }[] = [];
+
+  for (const ytSong of results) {
+    const { confidence, reason, score } = computeMatchInfo(track, ytSong);
+    scoredResults.push({ song: ytSong, confidence, reason, score });
+  }
+
+  scoredResults.sort((a, b) => b.score - a.score);
+
+  const candidates = scoredResults.slice(0, maxCandidates).map((r) => r.song);
+
+  const best = scoredResults[0];
+  if (!best) {
+    return {
+      track,
+      youtubeSong: null,
+      confidence: "none",
+      matchReason: "none",
+      candidates: [],
+    };
+  }
+
+  return {
+    track,
+    youtubeSong: best.song,
+    confidence: best.confidence,
+    matchReason: best.reason,
+    matchedName: best.song.name,
+    matchedArtist: best.song.artist,
+    candidates,
+  };
 }

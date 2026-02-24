@@ -24,6 +24,7 @@ export const ImporterConfigSchema = z.object({
   enableCache: z.boolean().default(true),
   cachePath: z.string().default("./search-cache.sqlite"),
   batchSize: z.number().min(1).max(100).default(50),
+  proxyUrl: z.string().optional(),
 });
 
 /** 导入器配置接口 */
@@ -43,6 +44,7 @@ export const DEFAULT_CONFIG: ImporterConfig = {
   enableCache: true,
   cachePath: "./search-cache.sqlite",
   batchSize: 50,
+  proxyUrl: undefined,
 };
 
 const configMap = new Map<string, ImporterConfig>();

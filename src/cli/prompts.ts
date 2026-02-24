@@ -1,11 +1,27 @@
 import { existsSync } from "node:fs";
 import { glob } from "glob";
-import type { ImportStats, MatchConfidence } from "../types/index.js";
+import type {
+  ImportStats,
+  MatchConfidence,
+  MatchResult,
+  MatchResultWithCandidates,
+} from "../types/index.js";
+import { Importer } from "../core/importer.js";
 import { t } from "../utils/i18n.js";
-import { promptSelectList } from "../tui/select-list.js";
+import { promptSelectList } from "../tui/selectList.js";
 import { promptCheckbox } from "../tui/checkbox.js";
-import { promptTextInput } from "../tui/text-input.js";
+import { promptTextInput } from "../tui/textInput.js";
 import { promptConfirm } from "../tui/confirm.js";
+import { promptPressKey } from "../tui/pressKey.js";
+
+/**
+ * 提示用户按任意键继续（用于显示信息后等待用户阅读）
+ * @param {string} [message] - 可选的提示消息，默认为 "按任意键返回主菜单..."
+ * @returns {Promise<void>} - 当用户按下任意键后解析的 Promise
+ */
+export async function promptPressEnter(message?: string): Promise<void> {
+  await promptPressKey(message || "按任意键返回主菜单...");
+}
 
 /** 导入选项接口 */
 export interface ImportAnswers {
@@ -105,6 +121,11 @@ export async function promptForCsvFile(): Promise<string | null> {
 
   const customPath = await promptTextInput({
     message: t("csv_enter_path"),
+    /**
+     * 验证用户输入的CSV文件路径
+     * @param {string} input 用户输入的CSV文件路径
+     * @returns {true | string} 如果输入有效则返回true，否则返回错误消息
+     */
     validate: (input: string) => {
       if (!input.trim()) {
         return true;
@@ -136,6 +157,11 @@ export async function promptForMultipleCsvFiles(): Promise<string[] | null> {
   if (csvFiles.length === 0) {
     const customPath = await promptTextInput({
       message: t("csv_enter_path"),
+      /**
+       * 验证用户输入的CSV文件路径
+       * @param {string} input 用户输入的CSV文件路径
+       * @returns {true | string} 如果输入有效则返回true，否则返回错误消息
+       */
       validate: (input: string) => {
         if (!input.trim()) {
           return true;
@@ -167,6 +193,11 @@ export async function promptForMultipleCsvFiles(): Promise<string[] | null> {
       { name: "──────────", value: "separator", disabled: true },
       { name: t("csv_browse"), value: "browse", checked: false },
     ],
+    /**
+     * 验证用户选择的CSV文件
+     * @param {string[]} input 选中的CSV文件路径数组
+     * @returns {true | string} 如果输入有效则返回true，否则返回错误消息
+     */
     validate: (input: string[]) => {
       if (input.length === 0) {
         return "Please select at least one file";
@@ -182,6 +213,11 @@ export async function promptForMultipleCsvFiles(): Promise<string[] | null> {
   if (selectedFiles.includes("browse")) {
     const customPath = await promptTextInput({
       message: t("csv_enter_path"),
+      /**
+       *  验证用户输入的CSV文件路径
+       * @param {string} input 用户输入的CSV文件路径
+       * @returns {true | string} 如果输入有效则返回true，否则返回错误消息
+       */
       validate: (input: string) => {
         if (!input.trim()) {
           return true;
@@ -268,6 +304,11 @@ async function promptForDelay(): Promise<number> {
   const delayStr = await promptTextInput({
     message: t("request_delay"),
     defaultValue: "1500",
+    /**
+     * 验证用户输入的延迟时间
+     * @param {string} input 用户输入的延迟时间字符串
+     * @returns {true | string} 如果输入有效则返回true，否则返回错误消息
+     */
     validate: (input: string) => {
       const num = Number.parseInt(input, 10);
       if (Number.isNaN(num) || num < 0) {
@@ -403,4 +444,43 @@ export async function promptForRetry(failedCount: number): Promise<boolean> {
   });
 
   return retry;
+}
+
+/**
+ * 提示用户解决低置信度匹配的歌曲
+ * @param {MatchResultWithCandidates[]} pending 待解决的低置信度歌曲列表
+ * @param {Importer} importer Importer 实例
+ * @returns {Promise<MatchResult[]>} 解决后的匹配结果数组
+ */
+export async function promptResolveLowConfidence(
+  pending: MatchResultWithCandidates[],
+  importer: Importer,
+): Promise<MatchResult[]> {
+  const { resolveLowConfidenceTui } =
+    await import("../tui/lowConfidenceResolver.js");
+
+  await resolveLowConfidenceTui(pending, {
+    /**
+     * 选择解决低置信度匹配的歌曲
+     * @param {number} index - 待解决歌曲的索引
+     * @param {MatchResult} selectedSong - 用户选择的匹配歌曲
+     */
+    onResolve: (index, selectedSong) => {
+      importer.resolveLowConfidenceSong(index, selectedSong);
+    },
+    /**
+     * 解决所有低置信度匹配的歌曲
+     */
+    onResolveAll: () => {
+      importer.resolveAllLowConfidence();
+    },
+    /**
+     * 跳过所有低置信度匹配的歌曲
+     */
+    onComplete: () => {
+      // Resolution complete, results are already saved
+    },
+  });
+
+  return importer.getAllResults();
 }

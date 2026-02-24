@@ -51,7 +51,7 @@ export class SearchCache {
       )
     `);
     this.db.run(sql`
-      CREATE INDEX IF NOT EXISTS idx_search_cache_updated_at ON search_cache(updated_at)
+      CREATE INDEX IF NOT EXISTS idx_search_cache_updated_at ON search_cache (updated_at)
     `);
   }
 
@@ -149,7 +149,8 @@ export class SearchCache {
       sql`
         DELETE FROM search_cache
         WHERE
-          datetime(updated_at) < datetime(?, '-${CACHE_EXPIRATION_MS / 1000} seconds')
+          datetime(updated_at) < datetime(?, '-${CACHE_EXPIRATION_MS /
+          1000} seconds')
       `,
       [now],
     );
