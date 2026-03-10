@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { t } from "./i18n.js";
 import type {
   ProgressRun,
   RunStatsDelta,
@@ -43,6 +44,14 @@ export interface DBResult {
  */
 export class DB {
   private db: Database;
+
+  /**
+   * 获取底层数据库实例（用于测试）
+   * @returns {Database} 数据库实例
+   */
+  get database(): Database {
+    return this.db;
+  }
 
   /**
    * 创建一个新的DB实例
@@ -90,7 +99,8 @@ export class DB {
         request_delay INTEGER,
         save_progress BOOLEAN,
         progress_db_path TEXT,
-        language TEXT CHECK (language IN ('en', 'zh-CN', 'ja'))
+        language TEXT CHECK (language IN ('en', 'zh-CN', 'ja')),
+        proxy_url TEXT
       )
     `);
     // 创建import_tracks表，如果不存在的话
@@ -116,6 +126,34 @@ export class DB {
     this.db.run(sql`
       CREATE INDEX IF NOT EXISTS idx_progress_runs_created_at ON progress_runs (created_at);
     `);
+
+    // 数据库迁移：为现有的 importer_config 表添加 proxy_url 字段（如果不存在）
+    this.migrateAddProxyUrl();
+  }
+
+  /**
+   * 迁移：为 importer_config 表添加 proxy_url 字段
+   * @private
+   */
+  private migrateAddProxyUrl(): void {
+    try {
+      /** 表结构信息 */
+      const tableInfo = this.db
+        .query("PRAGMA table_info(importer_config)")
+        .all() as { name: string }[];
+      /** 是否已存在 proxy_url 字段 */
+      const hasProxyUrl = tableInfo.some((col) => col.name === "proxy_url");
+
+      if (!hasProxyUrl) {
+        this.db.run(sql`
+          ALTER TABLE importer_config ADD COLUMN proxy_url TEXT
+        `);
+        console.log("Database migrated: Added proxy_url column");
+      }
+    } catch (error) {
+      // 如果表不存在或迁移失败，忽略错误（表刚创建时已包含该字段）
+      console.warn("Migration warning:", error);
+    }
   }
 
   /**
@@ -126,13 +164,13 @@ export class DB {
   createRUN(config: ProgressRun): DBResult {
     const createdAt = new Date().toISOString();
     if (config.csvPath === undefined) {
-      console.log("csvPath is undefined, cannot create run.");
+      console.log(t("error_csvpath_undefined"));
       return {
         success: false,
         error: new Error("csvPath is required"),
       };
     } else if (config.runId === undefined) {
-      console.log("runId is undefined, cannot create run.");
+      console.log(t("error_runid_undefined"));
       return {
         success: false,
         error: new Error("runId is required"),
@@ -142,9 +180,7 @@ export class DB {
       isNaN(config.totalTracks) ||
       config.totalTracks < 0
     ) {
-      console.log(
-        "totalTracks is undefined, not a number, or negative, cannot create run.",
-      );
+      console.log(t("error_totaltracks_invalid"));
       return {
         success: false,
         error: new Error(
@@ -179,7 +215,7 @@ export class DB {
       );
       return { success: true };
     } catch (error) {
-      console.log("Failed to create run:", error);
+      console.log(t("error_create_run_failed", { error: String(error) }));
       return {
         success: false,
         error: new Error("Failed to create run", { cause: error }),
@@ -534,6 +570,7 @@ export class DB {
       save_progress: config.saveProgress ?? null,
       progress_db_path: config.progressDbPath ?? null,
       language: config.language ?? null,
+      proxy_url: config.proxyUrl ?? null,
     };
 
     this.db.run(
@@ -546,10 +583,11 @@ export class DB {
             request_delay,
             save_progress,
             progress_db_path,
-            language
+            language,
+            proxy_url
           )
         VALUES
-          (1, ?, ?, ?, ?, ?, ?)
+          (1, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (id) DO UPDATE
         SET
           skip_confirmation = excluded.skip_confirmation,
@@ -557,7 +595,8 @@ export class DB {
           request_delay = excluded.request_delay,
           save_progress = excluded.save_progress,
           progress_db_path = excluded.progress_db_path,
-          language = excluded.language
+          language = excluded.language,
+          proxy_url = excluded.proxy_url
       `,
       [
         payload.skip_confirmation as boolean | null,
@@ -566,9 +605,82 @@ export class DB {
         payload.save_progress as boolean | null,
         payload.progress_db_path as string | null,
         payload.language as string | null,
+        payload.proxy_url as string | null,
       ],
     );
 
     return { success: true };
+  }
+
+  /**
+   * 获取匹配的曲目记录（用于报告统计）
+   * @param {string} runId - 运行记录的ID
+   * @returns {DBResult} 表示操作结果的对象
+   */
+  listMatchedTracks(runId: string): DBResult {
+    if (!runId) {
+      return { success: false, error: new Error("runId is required") };
+    }
+
+    const result = this.db
+      .prepare(sql`
+        SELECT
+          track_json,
+          match_result_json
+        FROM
+          import_tracks
+        WHERE
+          run_id = ?
+          AND status = 'matched'
+      `)
+      .all(runId);
+
+    return { success: true, data: result };
+  }
+
+  /**
+   * 删除指定日期之前的运行记录
+   * @param days - 保留天数
+   * @returns 删除的记录数
+   */
+  cleanupOldRuns(days: number): DBResult {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const cutoff = cutoffDate.toISOString();
+
+    const deleteTracks = this.db.run(sql`
+      DELETE FROM import_tracks
+      WHERE
+        run_id IN (
+          SELECT
+            run_id
+          FROM
+            import_runs
+          WHERE
+            created_at < ${cutoff}
+        )
+    `);
+
+    const deleteRuns = this.db.run(sql`
+      DELETE FROM import_runs
+      WHERE
+        created_at < ${cutoff}
+    `);
+
+    return {
+      success: true,
+      data: { tracksDeleted: deleteTracks, runsDeleted: deleteRuns },
+    };
+  }
+
+  /**
+   * 删除所有运行记录
+   * @returns 删除的记录数
+   */
+  clearAllRuns(): DBResult {
+    this.db.run(sql`DELETE FROM import_tracks`);
+    this.db.run(sql`DELETE FROM import_runs`);
+
+    return { success: true, data: { cleared: true } };
   }
 }

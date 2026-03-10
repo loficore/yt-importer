@@ -1,50 +1,35 @@
 import { z } from "zod";
+import {
+  MatchConfidenceEnum,
+  LanguageEnum,
+  ImporterConfigSchema,
+  type MatchConfidence,
+  type Language,
+  type ImporterConfig,
+} from "../types/index.js";
+import { DB, IMPORT } from "./constants.js";
 
-export const MatchConfidenceEnum = z.enum(["high", "medium", "low", "none"]);
-
-/** 匹配置信度类型 */
-export type MatchConfidence = z.infer<typeof MatchConfidenceEnum>;
-
-export const LanguageEnum = z.enum(["en", "zh-CN", "ja"]);
-
-/** 语言类型 */
-export type Language = z.infer<typeof LanguageEnum>;
-
-export const ImporterConfigSchema = z.object({
-  skipConfirmation: z.boolean().default(false),
-  minConfidence: MatchConfidenceEnum.default("low"),
-  requestDelay: z.number().min(100).max(60000).default(1500),
-  saveProgress: z.boolean().default(true),
-  progressFile: z.string().default("./import-progress.json"),
-  progressDbPath: z.string().default("./import-progress.sqlite"),
-  language: LanguageEnum.default("en"),
-  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
-  maxRetries: z.number().min(0).max(10).default(3),
-  retryDelay: z.number().min(100).max(10000).default(2000),
-  enableCache: z.boolean().default(true),
-  cachePath: z.string().default("./search-cache.sqlite"),
-  batchSize: z.number().min(1).max(100).default(50),
-  proxyUrl: z.string().optional(),
-});
-
-/** 导入器配置接口 */
-export type ImporterConfig = z.infer<typeof ImporterConfigSchema>;
+export type { MatchConfidence, Language, ImporterConfig };
+export { MatchConfidenceEnum, LanguageEnum, ImporterConfigSchema };
 
 export const DEFAULT_CONFIG: ImporterConfig = {
   skipConfirmation: false,
   minConfidence: "low",
-  requestDelay: 1500,
+  requestDelay: IMPORT.DEFAULT_REQUEST_DELAY,
   saveProgress: true,
   progressFile: "./import-progress.json",
-  progressDbPath: "./import-progress.sqlite",
+  progressDbPath: DB.PROGRESS_DB_NAME,
   language: "en",
   logLevel: "info",
-  maxRetries: 3,
-  retryDelay: 2000,
+  maxRetries: IMPORT.DEFAULT_MAX_RETRIES,
+  retryDelay: IMPORT.DEFAULT_RETRY_DELAY,
   enableCache: true,
-  cachePath: "./search-cache.sqlite",
-  batchSize: 50,
+  cachePath: DB.SEARCH_CACHE_DB_NAME,
+  batchSize: IMPORT.DEFAULT_BATCH_SIZE,
   proxyUrl: undefined,
+  concurrency: IMPORT.DEFAULT_CONCURRENCY,
+  searchQps: IMPORT.DEFAULT_SEARCH_QPS,
+  reportPath: "./reports",
 };
 
 const configMap = new Map<string, ImporterConfig>();

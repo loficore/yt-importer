@@ -1,4 +1,5 @@
 import { readFile } from "fs/promises";
+import { t } from "./i18n.js";
 
 /**
  * Cookie条目接口
@@ -56,9 +57,9 @@ export const loadCookieHeader = async (
 
     return header;
   } catch (e) {
-    console.error("读取或解析cookies文件时发生错误");
+    console.error(t("error_cookies_read_file"));
     return Promise.reject(
-      new Error("读取或解析cookies文件时发生错误", { cause: e }),
+      new Error(t("error_cookies_read_file"), { cause: e }),
     );
   }
 };
@@ -73,13 +74,13 @@ const parseCookieJson = (raw: string): CookieEntry[] => {
   try {
     cookiesData = JSON.parse(raw);
   } catch (e) {
-    console.error("解析cookies JSON时发生错误");
-    throw new Error("解析cookies JSON时发生错误", { cause: e });
+    console.error(t("error_cookies_parse_json"));
+    throw new Error(t("error_cookies_parse_json"), { cause: e });
   }
 
   if (!Array.isArray(cookiesData)) {
-    console.error("Cookies JSON格式错误: 不是一个数组");
-    throw new Error("Cookies JSON格式错误: 不是一个数组", {
+    console.error(t("error_cookies_not_array"));
+    throw new Error(t("error_cookies_not_array"), {
       cause: cookiesData,
     });
   }
@@ -87,8 +88,8 @@ const parseCookieJson = (raw: string): CookieEntry[] => {
   const parsedCookies: CookieEntry[] = [];
   for (const cookie of cookiesData) {
     if (typeof cookie !== "object" || cookie === null) {
-      console.error("Cookies JSON格式错误: 每个条目必须是对象");
-      throw new Error("Cookies JSON格式错误: 每个条目必须是对象", {
+      console.error(t("error_cookies_item_not_object"));
+      throw new Error(t("error_cookies_item_not_object"), {
         cause: cookie,
       });
     }
@@ -98,11 +99,9 @@ const parseCookieJson = (raw: string): CookieEntry[] => {
       typeof candidate.name !== "string" ||
       typeof candidate.value !== "string"
     ) {
-      console.error(
-        "Cookies JSON格式错误: 每个cookie必须包含name和value字段，且必须为字符串",
-      );
+      console.error(t("error_cookies_missing_field", { field: "name/value" }));
       throw new Error(
-        "Cookies JSON格式错误: 每个cookie必须包含name和value字段，且必须为字符串",
+        t("error_cookies_missing_field", { field: "name/value" }),
         { cause: candidate },
       );
     }

@@ -1,7 +1,6 @@
 import toml from "toml";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 /**
  * 支持的语言类型
@@ -38,10 +37,7 @@ export function getLanguage(): Language {
  */
 export function initI18n(lang?: Language): I18nConfig {
   const selectedLang = lang || getLanguage();
-  const translationsDir = join(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../config/translations",
-  );
+  const translationsDir = join(process.cwd(), "config/translations");
   const configPath = join(translationsDir, `${selectedLang}.toml`);
 
   let translations: Record<string, string> = {};

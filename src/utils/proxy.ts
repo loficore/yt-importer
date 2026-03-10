@@ -104,6 +104,9 @@ export async function testProxyConnection(
 
     if (err.code === "ECONNABORTED") message = "Connection timeout";
     else if (err.code === "ECONNREFUSED") message = "Proxy connection refused";
+    else if (err.code === "ECONNRESET")
+      message =
+        "Connection reset by proxy (proxy may be blocking or unable to reach target)";
     else if (err.code === "EPROTO")
       message = "Protocol error (Check if proxy type is correct)";
     else if (err.code === "ERR_TLS_CERT_ALTNAME_INVALID")
@@ -198,6 +201,8 @@ export async function testDirectConnection(
 
     if (err.code === "ECONNABORTED") message = "Connection timeout";
     else if (err.code === "ECONNREFUSED") message = "Connection refused";
+    else if (err.code === "ECONNRESET")
+      message = "Connection reset (network may be blocked or unstable)";
     else if (err.code === "ERR_TLS_CERT_ALTNAME_INVALID")
       message = "TLS certificate error (network issue)";
     else if (err.message) message = err.message;

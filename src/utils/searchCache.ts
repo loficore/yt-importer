@@ -145,17 +145,22 @@ export class SearchCache {
    */
   cleanupExpiredCaches(): number {
     const now = new Date().toISOString();
-    const result = this.db.run(
+    this.db.run(
       sql`
         DELETE FROM search_cache
         WHERE
-          datetime(updated_at) < datetime(?, '-${CACHE_EXPIRATION_MS /
-          1000} seconds')
+          datetime(updated_at) < datetime(?, '-24 hours')
       `,
       [now],
     );
 
-    const deletedCount = result.changes || 0;
+    const result = this.db.prepare("SELECT changes() as count").get() as
+      | { 
+        /** 删除的数量 */
+        count: number
+       }
+      | undefined;
+    const deletedCount = result?.count || 0;
     if (deletedCount > 0) {
       console.info(`Cleaned up ${deletedCount} expired cache entries.`);
     }
