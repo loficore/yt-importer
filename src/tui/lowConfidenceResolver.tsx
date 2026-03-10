@@ -1,4 +1,4 @@
-import React, { useState} from "react";
+import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 import type { MatchResultWithCandidates, YouTubeSong } from "../types/index.js";
 
@@ -49,17 +49,32 @@ function LowConfidenceResolverView({
   onResolveAll,
   onQuit,
 }: LowConfidenceResolverViewProps): React.JSX.Element {
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showConfirm, setShowConfirm] = useState<"resolveAll" | "quit" | null>(
+    null,
+  );
 
   useInput((input, key) => {
-    if (showConfirm) {
+    if (showConfirm === "resolveAll") {
       if (input === "y" || input === "Y" || key.return) {
-        setShowConfirm(false);
+        setShowConfirm(null);
         onResolveAll();
         return;
       }
       if (input === "n" || input === "N" || key.escape) {
-        setShowConfirm(false);
+        setShowConfirm(null);
+        return;
+      }
+      return;
+    }
+
+    if (showConfirm === "quit") {
+      if (input === "y" || input === "Y" || key.return) {
+        setShowConfirm(null);
+        onQuit();
+        return;
+      }
+      if (input === "n" || input === "N" || key.escape) {
+        setShowConfirm(null);
         return;
       }
       return;
@@ -80,12 +95,12 @@ function LowConfidenceResolverView({
     }
 
     if (input === "a" || input === "A") {
-      setShowConfirm(true);
+      setShowConfirm("resolveAll");
       return;
     }
 
     if (input === "q" || input === "Q" || key.escape) {
-      onQuit();
+      setShowConfirm("quit");
       return;
     }
 
@@ -127,7 +142,7 @@ function LowConfidenceResolverView({
 
   return (
     <Box flexDirection="column" padding={1}>
-      {showConfirm ? (
+      {showConfirm === "resolveAll" ? (
         <Box flexDirection="column" gap={1}>
           <Text color="yellow" bold>
             ⚠️ Confirm Bulk Import
@@ -140,6 +155,21 @@ function LowConfidenceResolverView({
           <Text dimColor>────────────────────────────────────────</Text>
           <Text>
             Confirm? <Text color="green">[Y]</Text> /{" "}
+            <Text color="red">[N]</Text>
+          </Text>
+        </Box>
+      ) : showConfirm === "quit" ? (
+        <Box flexDirection="column" gap={1}>
+          <Text color="yellow" bold>
+            ⚠️ Confirm Quit
+          </Text>
+          <Text>
+            {candidates.length} low confidence song
+            {candidates.length !== 1 ? "s" : ""} will remain unresolved.
+          </Text>
+          <Text dimColor>────────────────────────────────────────</Text>
+          <Text>
+            Confirm quit? <Text color="green">[Y]</Text> /{" "}
             <Text color="red">[N]</Text>
           </Text>
         </Box>
@@ -211,7 +241,7 @@ function LowConfidenceResolverView({
           <Text>
             <Text color="cyan">[1-5]</Text> Select <Text color="cyan">[s]</Text>{" "}
             Skip <Text color="cyan">[a]</Text> Import All{" "}
-            <Text color="cyan">[q]</Text> Quit
+            <Text color="cyan">[q]</Text> Quit (needs confirm)
           </Text>
         </>
       )}

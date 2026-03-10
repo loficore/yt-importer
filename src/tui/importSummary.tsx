@@ -60,7 +60,11 @@ function ImportSummaryView({
   const [selected, setSelected] = React.useState(0);
 
   useInput((input) => {
-    if (!showActions) return;
+    if (!showActions) {
+      // 当不显示操作选项时，按任意键都会触发 onConfirm（关闭摘要）
+      onConfirm?.();
+      return;
+    }
 
     if (input === "y" || input === "Y") {
       void onConfirm?.();
@@ -100,6 +104,9 @@ function ImportSummaryView({
         )}
       </Box>
       <Text dimColor>────────────────────────────────────────</Text>
+      {!showActions && (
+        <Text color="cyan">按任意键返回主菜单...</Text>
+      )}
       {showActions && (
         <Box flexDirection="column" gap={0}>
           <Text color={selected === 0 ? "green" : "gray"}>
@@ -116,7 +123,7 @@ function ImportSummaryView({
 }
 
 /**
- * 在终端显示一个简短的导入摘要，并在用户确认后返回
+ * 在终端显示一个简短的导入摘要,并在用户按键后返回
  * @param {object} params 标题与摘要数据
  * @param {string} params.title 摘要标题
  * @param {ImportSummaryData} params.data 摘要数据
@@ -137,11 +144,7 @@ export async function showImportSummary(params: {
         data={params.data}
         onConfirm={() => {
           unmount();
-          setTimeout(() => resolve(), 150);
-        }}
-        onCancel={() => {
-          unmount();
-          setTimeout(() => resolve(), 150);
+          setTimeout(() => resolve(), 100);
         }}
       />,
     );
@@ -198,11 +201,11 @@ export async function promptImportSummary(params: {
 }
 
 /**
- * 展示批量导入摘要并在短暂延迟后自动关闭
+ * 展示批量导入摘要并等待用户按键关闭
  * @param {object} params 标题与摘要数据
  * @param {number} params.count 导入的文件数量
  * @param {ImportSummaryData} params.data 摘要数据
- * @returns {Promise<void>} 自动关闭后解析
+ * @returns {Promise<void>} 用户按键后解析
  */
 export async function showBatchSummary(params: {
   /** 导入的文件数量 */
@@ -217,12 +220,11 @@ export async function showBatchSummary(params: {
       <ImportSummaryView
         title={`Batch Import Summary (${params.count} files)`}
         data={params.data}
+        onConfirm={() => {
+          unmount();
+          setTimeout(() => resolve(), 100);
+        }}
       />,
     );
-
-    setTimeout(() => {
-      unmount();
-      setTimeout(() => resolve(), 150);
-    }, 3000);
   });
 }

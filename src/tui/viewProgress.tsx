@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Box, Text, render, useInput } from "ink";
+import { UI } from "../utils/constants.js";
 
 /** 页面数据结构定义 */
 interface PageData {
@@ -41,7 +42,7 @@ function ViewProgressView({
   onBack,
 }: ViewProgressProps): React.JSX.Element {
   const [page, setPage] = useState(0);
-  const pageSize = 10;
+  const pageSize = UI.VIEW_PROGRESS_PAGE_SIZE;
   const totalPages = Math.ceil(data.length / pageSize);
 
   const paginatedData = useMemo(() => {

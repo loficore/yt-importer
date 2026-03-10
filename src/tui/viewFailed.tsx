@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Box, Text, render, useInput } from "ink";
+import { UI } from "../utils/constants.js";
 
 /** 失败曲目数据结构定义 */
 interface FailedTrack {
@@ -8,11 +9,11 @@ interface FailedTrack {
   /** 导入失败的时间戳 */
   created_at: string;
   /** 失败的曲目列表，每项包含曲目名称和艺术家 */
-  failedTracks: { 
-  /** 曲目名称 */  
-  name: string;
-  /** 艺术家名称 */
-  artist: string;
+  failedTracks: {
+    /** 曲目名称 */
+    name: string;
+    /** 艺术家名称 */
+    artist: string;
   }[];
 }
 
@@ -33,7 +34,7 @@ interface ViewFailedProps {
  */
 function ViewFailedView({ data, onBack }: ViewFailedProps): React.JSX.Element {
   const [page, setPage] = useState(0);
-  const pageSize = 5;
+  const pageSize = UI.VIEW_FAILED_PAGE_SIZE;
   const totalPages = Math.ceil(data.length / pageSize);
 
   const paginatedData = useMemo(() => {

@@ -10,7 +10,7 @@ interface ConfirmProps {
   /**
    * 提交时调用，参数为用户选择的值，true 表示选择 Yes，false 表示选择 No。
    * @param {boolean} value 用户选择的值，true 表示选择 Yes，false 表示选择 No。
-   * @returns 
+   * @returns
    */
   onSubmit: (value: boolean) => void;
 }
