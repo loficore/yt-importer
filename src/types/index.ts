@@ -1,17 +1,45 @@
 import { z } from "zod";
-import type {
-  MatchConfidence,
-  Language,
-  ImporterConfig,
-} from "../utils/config.js";
-import {
-  MatchConfidenceEnum,
-  LanguageEnum,
-  ImporterConfigSchema,
-} from "../utils/config.js";
 
-export type { MatchConfidence, Language, ImporterConfig };
-export { MatchConfidenceEnum, LanguageEnum, ImporterConfigSchema };
+export const MatchConfidenceEnum = z.enum(["high", "medium", "low", "none"]);
+
+/** 匹配置信度类型 */
+export type MatchConfidence = z.infer<typeof MatchConfidenceEnum>;
+
+export const LanguageEnum = z.enum(["en", "zh-CN", "ja"]);
+
+/** 语言类型 */
+export type Language = z.infer<typeof LanguageEnum>;
+
+export const ImporterConfigSchema = z.object({
+  skipConfirmation: z.boolean().default(false),
+  minConfidence: MatchConfidenceEnum.default("low"),
+  requestDelay: z
+    .number()
+    .min(100)
+    .max(60000)
+    .default(1500),
+  saveProgress: z.boolean().default(true),
+  progressFile: z.string().default("./import-progress.json"),
+  progressDbPath: z.string().default("import-progress.sqlite"),
+  language: LanguageEnum.default("en"),
+  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  maxRetries: z.number().min(0).max(10).default(3),
+  retryDelay: z
+    .number()
+    .min(100)
+    .max(10000)
+    .default(2000),
+  enableCache: z.boolean().default(true),
+  cachePath: z.string().default("search-cache.sqlite"),
+  batchSize: z.number().min(1).max(100).default(50),
+  proxyUrl: z.string().optional(),
+  concurrency: z.number().min(1).max(10).default(5),
+  searchQps: z.number().min(1).max(20).default(10),
+  reportPath: z.string().default("./reports"),
+});
+
+/** 导入器配置接口 */
+export type ImporterConfig = z.infer<typeof ImporterConfigSchema>;
 
 export const SpotifyTrackSchema = z.object({
   uri: z.string(),
