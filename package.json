@@ -42,6 +42,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "build:check": "tsc --noEmit",
-    "test": "vitest"
+    "test": "vitest",
+    "validate:i18n": "bun run scripts/validate-i18n.ts"
   }
 }
