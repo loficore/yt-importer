@@ -1,6 +1,7 @@
 import { readFile } from "fs";
 import { parse } from "csv-parse/sync";
 import type { SpotifyTrack } from "../types";
+import { logger } from "@utils/logger.js";
 
 /**
  * CSV文件中的一行数据，表示为一个键值对对象，键是列名，值是对应的单元格内容
@@ -14,10 +15,16 @@ export type CsvRow = Record<string, string>;
  * @throws {Error} 如果在读取过程中发生错误，会抛出相应的错误信息
  */
 const readCsvFile = async (filePath: string): Promise<string> => {
+  logger.info("开始读取 CSV 文件", { filePath });
   return new Promise((res, rej) => {
     readFile(filePath, "utf-8", (err, data) => {
-      if (err) rej(err);
-      else res(data);
+      if (err) {
+        logger.error("读取 CSV 文件失败", { filePath, error: String(err) });
+        rej(err);
+      } else {
+        logger.debug("CSV 文件读取成功", { filePath, size: data.length });
+        res(data);
+      }
     });
   });
 };
@@ -50,15 +57,18 @@ const parseCsv = (text: string): Promise<CsvRow[]> => {
  */
 const mapToTracks = (rows: CsvRow[]): SpotifyTrack[] => {
   const tracks: SpotifyTrack[] = [];
+  let skippedCount = 0;
+
   for (const row of rows) {
     const uri = row["Track URI"]?.trim();
     const name = row["Track Name"]?.trim();
     const album = row["Album Name"]?.trim();
-    const artists = row["Artist Name(s)"]?.trim(); //暂时不拆分artists，直接当成一个字符串处理
+    const artists = row["Artist Name(s)"]?.trim();
     const duration = row["Duration (ms)"]?.trim();
 
     if (!uri || !name || !album || !artists || !duration) {
-      console.warn(`跳过缺少字段的行: ${JSON.stringify(row)}`);
+      skippedCount++;
+      logger.debug("跳过缺少字段的行", { row: JSON.stringify(row) });
       continue;
     }
     tracks.push({
@@ -69,6 +79,12 @@ const mapToTracks = (rows: CsvRow[]): SpotifyTrack[] => {
       duration: Number(duration),
     });
   }
+
+  logger.info("CSV 解析完成", {
+    totalRows: rows.length,
+    validTracks: tracks.length,
+    skippedRows: skippedCount,
+  });
 
   return tracks;
 };

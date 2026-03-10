@@ -1,6 +1,7 @@
 import { Innertube } from "youtubei.js";
 import { loadCookieHeader } from "@utils/cookies.js";
 import { logger } from "@utils/logger.js";
+import { t } from "@utils/i18n.js";
 import type { Playlist } from "../types/index.js";
 
 /**
@@ -30,7 +31,7 @@ export interface InnertubeOptions {
 }
 
 /** 搜索器类 */
-class Searcher {
+export class Searcher {
   private innertube?: Innertube;
 
   /**
@@ -78,14 +79,22 @@ class Searcher {
       throw new Error("Innertube没有初始化，请先调用init方法");
     }
 
+    logger.info("开始搜索歌曲", { queryCount: query.length, queries: query });
+
     const results = [];
     for (const q of query) {
+      logger.debug("执行搜索查询", { query: q });
       const searchResults = await this.innertube.music.search(q, {
         type: "song",
       });
       results.push(searchResults);
+      logger.debug("搜索完成", { query: q, hasResults: !!searchResults });
     }
 
+    logger.info("搜索完成", {
+      totalQueries: query.length,
+      totalResults: results.length,
+    });
     return Promise.resolve(results);
   }
 
@@ -103,7 +112,9 @@ class Searcher {
       const response = await this.innertube.playlist.create(name, []);
       return response.playlist_id || "";
     } catch (error) {
-      console.error("创建播放列表失败:", error);
+      console.error(
+        t("error_playlist_create_failed", { error: String(error) }),
+      );
       throw error;
     }
   }
@@ -122,7 +133,12 @@ class Searcher {
     try {
       await this.innertube.playlist.addVideos(playlistId, videoIds);
     } catch (error) {
-      console.error(`向播放列表 ${playlistId} 添加视频失败:`, error);
+      console.error(
+        t("error_playlist_add_failed", {
+          id: playlistId,
+          error: String(error),
+        }),
+      );
       throw error;
     }
   }
@@ -234,7 +250,7 @@ class Searcher {
         };
       });
     } catch (error) {
-      console.error("获取播放列表失败:", error);
+      console.error(t("error_get_playlists_failed", { error: String(error) }));
       return [];
     }
   }
@@ -283,7 +299,12 @@ class Searcher {
 
       return tracks;
     } catch (error) {
-      console.error(`获取播放列表 ${playlistId} 曲目失败:`, error);
+      console.error(
+        t("error_get_playlist_tracks_failed", {
+          id: playlistId,
+          error: String(error),
+        }),
+      );
       return [];
     }
   }

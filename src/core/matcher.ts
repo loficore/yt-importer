@@ -6,6 +6,157 @@ import type {
   MatchReason,
   MatchResultWithCandidates,
 } from "../types/index.js";
+import { logger } from "../utils/logger.js";
+
+/**
+ * 全角转半角映射表
+ */
+const FULLWIDTH_TO_HALFWIDTH: Record<string, string> = {
+  "！": "!",
+  "？": "?",
+  "．": ".",
+  "，": ",",
+  "：": ":",
+  "；": ";",
+  "／": "/",
+  "－": "-",
+  "（": "(",
+  "）": ")",
+  "［": "[",
+  "］": "]",
+  "｛": "{",
+  "｝": "}",
+  "｜": "|",
+  "＋": "+",
+  "＝": "=",
+  "＊": "*",
+  "％": "%",
+  "＠": "@",
+  "｀": "`",
+  "￣": "~",
+  "・": "·",
+};
+
+/**
+ * 平假名转片假名映射表
+ */
+const HIRAGANA_TO_KATAKANA: Record<string, string> = {
+  あ: "ア",
+  い: "イ",
+  う: "ウ",
+  え: "エ",
+  お: "オ",
+  か: "カ",
+  き: "キ",
+  く: "ク",
+  け: "ケ",
+  こ: "コ",
+  さ: "サ",
+  し: "シ",
+  す: "ス",
+  せ: "セ",
+  そ: "ソ",
+  た: "タ",
+  ち: "チ",
+  つ: "ツ",
+  て: "テ",
+  と: "ト",
+  な: "ナ",
+  に: "ニ",
+  ぬ: "ヌ",
+  ね: "ネ",
+  の: "ノ",
+  は: "ハ",
+  ひ: "ヒ",
+  ふ: "フ",
+  へ: "ヘ",
+  ほ: "ホ",
+  ま: "マ",
+  み: "ミ",
+  む: "ム",
+  め: "メ",
+  も: "モ",
+  や: "ヤ",
+  ゆ: "ユ",
+  よ: "ヨ",
+  ら: "ラ",
+  り: "リ",
+  る: "ル",
+  れ: "レ",
+  ろ: "ロ",
+  わ: "ワ",
+  を: "ヲ",
+  ん: "ン",
+  が: "ガ",
+  ぎ: "ギ",
+  ぐ: "グ",
+  げ: "ゲ",
+  ご: "ゴ",
+  ざ: "ザ",
+  じ: "ジ",
+  ず: "ズ",
+  ぜ: "ゼ",
+  ぞ: "ゾ",
+  だ: "ダ",
+  ぢ: "ヂ",
+  づ: "ヅ",
+  で: "デ",
+  ど: "ド",
+  ば: "バ",
+  び: "ビ",
+  ぶ: "ブ",
+  べ: "ベ",
+  ぼ: "ボ",
+  ぱ: "パ",
+  ぴ: "ピ",
+  ぷ: "プ",
+  ぺ: "ペ",
+  ぽ: "ポ",
+  ぁ: "ァ",
+  ぃ: "ィ",
+  ぅ: "ゥ",
+  ぇ: "ェ",
+  ぉ: "ォ",
+  ゃ: "ャ",
+  ゅ: "ュ",
+  ょ: "ョ",
+  っ: "ッ",
+};
+
+/**
+ * 将全角字符转换为半角
+ * @param {string} str 输入字符串
+ * @returns {string} 转换后的字符串
+ */
+export function fullwidthToHalfwidth(str: string): string {
+  let result = "";
+  for (const char of str) {
+    const code = char.codePointAt(0);
+    if (code !== undefined && code >= 0xff01 && code <= 0xff5e) {
+      result +=
+        FULLWIDTH_TO_HALFWIDTH[char] ||
+        String.fromCodePoint(code - 0xff00 + 0x20);
+    } else if (char === "　") {
+      result += " ";
+    } else {
+      result += char;
+    }
+  }
+  return result;
+}
+
+/**
+ * 将平假名转换为片假名
+ * @param {string} str 输入字符串
+ * @returns {string} 转换后的字符串
+ */
+export function hiraganaToKatakana(str: string): string {
+  let result = "";
+  for (const char of str) {
+    result += HIRAGANA_TO_KATAKANA[char] || char;
+  }
+  return result;
+}
 
 /**
  * 标准化字符串
@@ -13,8 +164,25 @@ import type {
  * @returns {string} 标准化后的字符串
  */
 export function normalizeString(str: string): string {
-  return str
-    .normalize("NFKC")
+  const result = str.normalize("NFKC");
+
+  let normalized = "";
+  for (const char of result) {
+    const code = char.codePointAt(0);
+    if (code !== undefined && code >= 0xff01 && code <= 0xff5e) {
+      normalized +=
+        FULLWIDTH_TO_HALFWIDTH[char] ||
+        String.fromCodePoint(code - 0xff00 + 0x20);
+    } else if (code !== undefined && code >= 0x3040 && code <= 0x309f) {
+      normalized += HIRAGANA_TO_KATAKANA[char] || char;
+    } else if (char === "　") {
+      normalized += " ";
+    } else {
+      normalized += char;
+    }
+  }
+
+  return normalized
     .toLowerCase()
     .replace(/[\p{P}\p{S}]+/gu, " ")
     .replace(/\s+/g, " ")
@@ -35,13 +203,79 @@ const TITLE_STOP_WORDS = new Set([
 ]);
 
 /**
+ * 版本信息正则表达式
+ */
+const VERSION_PATTERNS = [
+  /\b(remix)\b/i,
+  /\b(original\s*mix)\b/i,
+  /\b(radio\s*edit)\b/i,
+  /\b(extended\s*mix)\b/i,
+  /\b(extended\s*version)\b/i,
+  /\b(album\s*version)\b/i,
+  /\b(instrumental)\b/i,
+  /\b(acoustic)\b/i,
+  /\b(live)\b/i,
+  /\b(clean\s*version)\b/i,
+  /\b(explicit\s*version)\b/i,
+  /\b(remastered)\b/i,
+  /\b(demo)\b/i,
+  /\b(cover)\b/i,
+  /\b(feat\.?|featuring|ft\.?)\b\.?/i,
+];
+
+/**
+ * 提取版本信息并返回清理后的标题
+ * @param {string} title 原始标题
+ * @returns {{ cleanTitle: string; version: string }} 清理后的标题和版本信息
+ */
+export function extractVersionInfo(title: string): {
+  /** 清理后的标题 */
+  cleanTitle: string;
+  /** 版本信息 */
+  version: string;
+} {
+  const normalized = normalizeFeature(title).toLowerCase();
+  const versionParts: string[] = [];
+  let cleanTitle = normalized;
+
+  for (const pattern of VERSION_PATTERNS) {
+    const match = cleanTitle.match(pattern);
+    if (match) {
+      versionParts.push(match[0]);
+      cleanTitle = cleanTitle.replace(pattern, " ");
+    }
+  }
+
+  cleanTitle = cleanTitle.replace(/\s+/g, " ").trim();
+
+  return {
+    cleanTitle,
+    version: versionParts.join(" | "),
+  };
+}
+
+/**
+ * 统一协作艺术家变体
+ * @param {string} str 输入字符串
+ * @returns {string} 统一后的字符串
+ */
+export function normalizeFeature(str: string): string {
+  return str
+    .replace(/\b(feat\.?|featuring)\b\.?/gi, "feat")
+    .replace(/\bft\.?\b\.?/gi, "feat")
+    .replace(/\band\b/gi, "&")
+    .replace(/\s*\+\s*/g, " & ")
+    .replace(/\s*,\s*/g, " & ");
+}
+
+/**
  * 将标题分词并去除停用词
  * @param {string} title 标题字符串
  * @returns {string[]} 分词后的标题数组
  */
 function tokenizeTitle(title: string): string[] {
-  const normalized = normalizeString(title)
-    .replace(/\b(feat|ft|featuring)\b/gu, " ")
+  const normalized = normalizeFeature(normalizeString(title))
+    .replace(/\b(feat)\b/gu, " ")
     .replace(/\b\d{4}\b/gu, " ");
   return normalized
     .split(" ")
@@ -99,21 +333,8 @@ export function nameSimilarity(s1: string, s2: string): number {
  * @returns {boolean} 如果艺术家名称匹配，则返回true；否则返回false
  */
 export function artistMatch(trackArtist: string, ytArtist: string): boolean {
-  /**
-   * 将艺术家字符串分割成数组
-   * @param {string} value - 艺术家字符串
-   * @returns {string[]} 分割后的艺术家数组
-   */
-  const splitArtists = (value: string): string[] =>
-    normalizeString(value)
-      .replace(/\b(feat|ft|featuring|x|and)\b/gu, ",")
-      .replace(/&/gu, ",")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-  const normalizedTrack = normalizeString(trackArtist);
-  const normalizedYt = normalizeString(ytArtist);
+  const normalizedTrack = normalizeFeature(normalizeString(trackArtist));
+  const normalizedYt = normalizeFeature(normalizeString(ytArtist));
 
   if (normalizedTrack === normalizedYt) return true;
   if (
@@ -121,6 +342,18 @@ export function artistMatch(trackArtist: string, ytArtist: string): boolean {
     normalizedTrack.includes(normalizedYt)
   )
     return true;
+
+  /**
+   * 将艺术家字符串分割成数组
+   * @param {string} value - 艺术家字符串
+   * @returns {string[]} 分割后的艺术家数组
+   */
+  const splitArtists = (value: string): string[] =>
+    normalizeFeature(value)
+      .replace(/[&,]/g, " ")
+      .split(" ")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   const trackArtists = splitArtists(trackArtist);
   const ytArtists = splitArtists(ytArtist);
@@ -153,6 +386,17 @@ export function calculateConfidence(
   const durationOk = durationKnown
     ? durationMatch(track.duration, ytSong.duration)
     : false;
+
+  logger.debug("计算匹配置信度", {
+    trackName: track.name,
+    trackArtist: track.artist,
+    ytName: ytSong.name,
+    ytArtist: ytSong.artist,
+    nameScore,
+    artistMatchResult,
+    durationKnown,
+    durationOk,
+  });
 
   if (nameScore >= 0.8 && artistMatchResult) {
     if (durationOk) {
@@ -199,6 +443,10 @@ export function matchTrackToResults(
   results: YouTubeSong[],
 ): MatchResult {
   if (results.length === 0) {
+    logger.debug("搜索结果为空", {
+      trackName: track.name,
+      trackArtist: track.artist,
+    });
     return {
       track,
       youtubeSong: null,
@@ -225,14 +473,21 @@ export function matchTrackToResults(
     }
   }
 
-  return (
-    bestResult || {
-      track,
-      youtubeSong: null,
-      confidence: "none",
-      matchReason: "none",
-    }
-  );
+  const finalResult = bestResult || {
+    track,
+    youtubeSong: null,
+    confidence: "none",
+    matchReason: "none",
+  };
+
+  logger.debug("匹配完成", {
+    trackName: track.name,
+    confidence: finalResult.confidence,
+    reason: finalResult.matchReason,
+    score: bestScore,
+  });
+
+  return finalResult;
 }
 
 /**
