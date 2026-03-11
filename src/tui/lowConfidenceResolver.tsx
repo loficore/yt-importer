@@ -40,7 +40,7 @@ interface LowConfidenceResolverViewProps {
  * @param {LowConfidenceResolverViewProps} props 组件 props。
  * @returns {React.JSX.Element} 渲染的元素。
  */
-function LowConfidenceResolverView({
+export function LowConfidenceResolverView({
   candidates,
   currentIndex,
   selectedCandidateIndex,

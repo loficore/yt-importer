@@ -29,7 +29,7 @@ interface ProxyTestResultProps {
  * @param {ProxyTestResultProps} param0 组件 props
  * @returns {React.JSX.Element} 渲染的代理测试结果视图元素
  */
-function ProxyTestResultView({
+export function ProxyTestResultView({
   testType,
   proxyUrl,
   result,
@@ -70,7 +70,6 @@ function ProxyTestResultView({
   );
 }
 
-
 /**
  * 显示代理测试结果的 TUI。
  * @param {("direct" | "proxy")} testType 测试类型
@@ -80,7 +79,7 @@ function ProxyTestResultView({
  * @param {string} result.status HTTP 状态码或其他状态描述
  * @param {string} result.message 结果消息，供 UI 显示
  * @param {number} [result.latency] 可选的响应时间（毫秒）
- * @returns {Promise<void>} 异步操作完成的 Promise  
+ * @returns {Promise<void>} 异步操作完成的 Promise
  */
 export async function showProxyTestResult(
   testType: "direct" | "proxy",

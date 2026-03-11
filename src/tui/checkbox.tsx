@@ -47,7 +47,7 @@ interface CheckboxProps<T = string> {
  * @param {CheckboxProps<T>} props 组件属性。
  * @returns {React.JSX.Element} 渲染的组件。
  */
-function CheckboxView<T = string>({
+export function CheckboxView<T = string>({
   message,
   choices,
   onSubmit,

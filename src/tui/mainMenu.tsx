@@ -46,7 +46,7 @@ interface MainMenuProps {
  * @param {MainMenuProps} props 组件属性
  * @returns {React.JSX.Element} 渲染的 Ink 组件
  */
-function MainMenuView({
+export function MainMenuView({
   title,
   subtitle,
   langLabel,

@@ -41,7 +41,7 @@ const COLORS: Record<NotificationType, string> = {
  * @param {NotificationProps} props 组件 props
  * @returns {React.JSX.Element} 渲染的通知元素
  */
-function NotificationView({
+export function NotificationView({
   type,
   message,
   duration = 2000,

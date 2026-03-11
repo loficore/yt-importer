@@ -50,7 +50,7 @@ interface ImportCookiesProps {
  * @param {ImportCookiesProps} props 组件 props。
  * @returns {React.JSX.Element} 渲染的 Ink 组件。
  */
-function ImportCookiesView({
+export function ImportCookiesView({
   currentCookiePath,
   autoWatchEnabled,
   onImport,

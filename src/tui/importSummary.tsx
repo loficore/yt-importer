@@ -50,7 +50,7 @@ interface ImportSummaryProps {
  * @param {ImportSummaryProps} props 组件属性
  * @returns {React.JSX.Element} 渲染的元素
  */
-function ImportSummaryView({
+export function ImportSummaryView({
   title,
   data,
   onConfirm,
@@ -104,9 +104,7 @@ function ImportSummaryView({
         )}
       </Box>
       <Text dimColor>────────────────────────────────────────</Text>
-      {!showActions && (
-        <Text color="cyan">按任意键返回主菜单...</Text>
-      )}
+      {!showActions && <Text color="cyan">按任意键返回主菜单...</Text>}
       {showActions && (
         <Box flexDirection="column" gap={0}>
           <Text color={selected === 0 ? "green" : "gray"}>

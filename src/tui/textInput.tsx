@@ -25,7 +25,7 @@ interface TextInputProps {
  * @param {(value: string) => void} param0.onSubmit 提交回调，参数为输入的值
  * @returns {React.JSX.Element} 渲染的文本输入视图元素
  */
-function TextInputView({
+export function TextInputView({
   message,
   defaultValue = "",
   placeholder = "",

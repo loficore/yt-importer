@@ -1,17 +1,13 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Text, render, useInput } from "ink";
-
-/** 选择列表的选项定义 */
-export interface SelectListChoice<T = string> {
-  /** 选项名称 */
-  name: string;
-  /** 选项值 */
-  value: T;
-  /** 是否禁用 */
-  disabled?: boolean;
-  /** 选项描述 */
-  description?: string;
-}
+import {
+  getEnabledChoices,
+  getInputAction,
+  getRenderableChoices,
+  getSelectedChoice,
+  moveSelection,
+  type SelectListChoice,
+} from "./selectListLogic.js";
 
 /** 选择列表组件的 props 定义 */
 interface SelectListProps<T = string> {
@@ -30,55 +26,59 @@ interface SelectListProps<T = string> {
  * @param {SelectListProps} param0 组件 props 包含提示信息、选项列表、选择回调和循环导航设置
  * @param {string} param0.message 提示信息，显示在选项上方
  * @param {SelectListChoice[]} param0.choices 选项列表，每项包含名称、值、禁用状态和描述
- * @param {(value: T) => void} param0.onSelect 用户选择后的回调函数，参数为选中的值
+ * @param {(value: unknown) => void} param0.onSelect 用户选择后的回调函数，参数为选中的值
  * @param {boolean} [param0.loop] 是否启用循环导航，默认为 false
  * @returns {React.JSX.Element} 渲染的选择列表视图元素
  */
-function SelectListView<T = string>({
+export function SelectListView<T = string>({
   message,
   choices,
   onSelect,
   loop = false,
 }: SelectListProps<T>): React.JSX.Element {
-  const [index, setIndex] = useState(0);
+  const enabledChoices = useMemo(() => getEnabledChoices(choices), [choices]);
+  const [index, setIndex] = useState(enabledChoices.length > 0 ? 0 : -1);
 
-  // 过滤掉禁用的选项
-  const enabledChoices = useMemo(
-    () => choices.filter((choice) => !choice.disabled),
-    [choices],
+  useEffect(() => {
+    setIndex((prev) => {
+      if (enabledChoices.length === 0) {
+        return -1;
+      }
+
+      return Math.min(Math.max(prev, 0), enabledChoices.length - 1);
+    });
+  }, [enabledChoices.length]);
+
+  const renderableChoices = useMemo(
+    () => getRenderableChoices(choices, index),
+    [choices, index],
   );
 
   const onUp = useCallback(() => {
-    setIndex((prev) => {
-      if (loop) {
-        return (prev - 1 + enabledChoices.length) % enabledChoices.length;
-      }
-      return Math.max(0, prev - 1);
-    });
+    setIndex((prev) => moveSelection(prev, enabledChoices.length, "up", loop));
   }, [enabledChoices.length, loop]);
 
   const onDown = useCallback(() => {
-    setIndex((prev) => {
-      if (loop) {
-        return (prev + 1) % enabledChoices.length;
-      }
-      return Math.min(enabledChoices.length - 1, prev + 1);
-    });
+    setIndex((prev) =>
+      moveSelection(prev, enabledChoices.length, "down", loop),
+    );
   }, [enabledChoices.length, loop]);
 
   useInput((input, key) => {
-    if (key.upArrow || input === "k") {
+    const action = getInputAction(input, key);
+
+    if (action === "up") {
       onUp();
       return;
     }
 
-    if (key.downArrow || input === "j") {
+    if (action === "down") {
       onDown();
       return;
     }
 
-    if (key.return) {
-      const choice = enabledChoices[index];
+    if (action === "select") {
+      const choice = getSelectedChoice(choices, index);
       if (choice) {
         onSelect(choice.value);
       }
@@ -89,12 +89,7 @@ function SelectListView<T = string>({
     <Box flexDirection="column" gap={0}>
       <Text color="cyan">? {message}</Text>
       <Box flexDirection="column" marginTop={1}>
-        {choices.map((choice, choiceIndex) => {
-          const enabledIndex = enabledChoices.findIndex(
-            (c) => c.value === choice.value,
-          );
-          const active = enabledIndex === index && !choice.disabled;
-
+        {renderableChoices.map((choice, choiceIndex) => {
           if (choice.disabled) {
             return (
               <Text key={choiceIndex} dimColor>
@@ -105,11 +100,11 @@ function SelectListView<T = string>({
 
           return (
             <Box key={choiceIndex} flexDirection="column">
-              <Text color={active ? "cyan" : undefined}>
-                {active ? "❯ " : "  "}
+              <Text color={choice.active ? "cyan" : undefined}>
+                {choice.active ? "❯ " : "  "}
                 {choice.name}
               </Text>
-              {choice.description && active ? (
+              {choice.description && choice.active ? (
                 <Box marginLeft={2}>
                   <Text dimColor>{choice.description}</Text>
                 </Box>

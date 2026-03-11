@@ -16,7 +16,10 @@ interface PressKeyProps {
  * @param {PressKeyProps} param0  组件 props 包含可选的提示消息和按键回调函数
  * @returns {React.JSX.Element} 渲染的按键提示元素
  */
-function PressKeyView({ message, onPress }: PressKeyProps): React.JSX.Element {
+export function PressKeyView({
+  message,
+  onPress,
+}: PressKeyProps): React.JSX.Element {
   useInput(() => {
     onPress();
   });

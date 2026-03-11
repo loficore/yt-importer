@@ -3,7 +3,7 @@ import { Box, Text, render, useInput } from "ink";
 import { UI } from "../utils/constants.js";
 
 /** 页面数据结构定义 */
-interface PageData {
+export interface PageData {
   /** CSV 文件路径 */
   csv_path: string;
   /** 创建时间 */
@@ -37,7 +37,7 @@ interface ViewProgressProps {
  * @param {() => void} param0.onBack 用户返回主菜单的回调函数
  * @returns {React.JSX.Element} 渲染的导入进度视图元素
  */
-function ViewProgressView({
+export function ViewProgressView({
   data,
   onBack,
 }: ViewProgressProps): React.JSX.Element {

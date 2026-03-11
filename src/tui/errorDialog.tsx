@@ -18,7 +18,7 @@ interface ErrorDialogProps {
     failed: number;
   };
   /**
-   * 
+   *
    * @param {ErrorAction} action - 用户选择的操作类型
    */
   onAction: (action: ErrorAction) => void;
@@ -29,7 +29,7 @@ interface ErrorDialogProps {
  * @param {ErrorDialogProps} param0 - 错误对话框属性
  * @returns {React.JSX.Element} - 错误对话框组件
  */
-function ErrorDialogView({
+export function ErrorDialogView({
   errorMessage,
   stats,
   onAction,

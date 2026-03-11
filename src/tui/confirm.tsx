@@ -20,7 +20,7 @@ interface ConfirmProps {
  * @param {ConfirmProps} param0  组件属性对象，包含提示信息、默认值和提交回调函数。
  * @returns {React.JSX.Element} 渲染的组件。
  */
-function ConfirmView({
+export function ConfirmView({
   message,
   defaultValue = false,
   onSubmit,

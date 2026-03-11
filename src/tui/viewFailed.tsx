@@ -3,7 +3,7 @@ import { Box, Text, render, useInput } from "ink";
 import { UI } from "../utils/constants.js";
 
 /** 失败曲目数据结构定义 */
-interface FailedTrack {
+export interface FailedTrack {
   /** 导入失败的 CSV 文件路径 */
   csv_path: string;
   /** 导入失败的时间戳 */
@@ -32,7 +32,10 @@ interface ViewFailedProps {
  * @param {() => void} param0.onBack 用户返回主菜单的回调函数
  * @returns {React.JSX.Element} 渲染的失败曲目视图元素
  */
-function ViewFailedView({ data, onBack }: ViewFailedProps): React.JSX.Element {
+export function ViewFailedView({
+  data,
+  onBack,
+}: ViewFailedProps): React.JSX.Element {
   const [page, setPage] = useState(0);
   const pageSize = UI.VIEW_FAILED_PAGE_SIZE;
   const totalPages = Math.ceil(data.length / pageSize);
