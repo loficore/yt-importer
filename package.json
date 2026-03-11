@@ -13,6 +13,7 @@
     "@vitest/ui": "^4.0.18",
     "bun-types": "^1.3.9",
     "eslint-plugin-jsdoc": "^62.5.4",
+    "ink-testing-library": "^4.0.0",
     "prettier": "^3.8.1",
     "prettier-plugin-embed": "^0.5.0",
     "prettier-plugin-sql": "^0.18.1",
@@ -23,7 +24,6 @@
   },
   "dependencies": {
     "axios": "^1.13.5",
-    "clsx": "^2.1.0",
     "csv-parse": "^6.1.0",
     "eslint": "^10.0.0",
     "https-proxy-agent": "^7.0.6",
@@ -42,7 +42,8 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "build:check": "tsc --noEmit",
-    "test": "vitest",
+    "test": "node ./node_modules/vitest/vitest.mjs",
+    "test:bun": "vitest",
     "validate:i18n": "bun run scripts/validate-i18n.ts"
   }
 }

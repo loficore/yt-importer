@@ -47,3 +47,5 @@ import-progress.json
 *.sqlite-wal
 
 *.txt
+
+reports/
