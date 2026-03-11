@@ -1,4 +1,29 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+const { MockDatabase, MockSearchCache } = vi.hoisted(() => {
+  return {
+    MockDatabase: class MockDatabase {
+      run = vi.fn();
+      prepare = vi.fn().mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+        run: vi.fn(),
+      });
+    },
+    MockSearchCache: class MockSearchCache {
+      get = vi.fn().mockReturnValue(null);
+      set = vi.fn();
+      cleanupExpiredCaches = vi.fn().mockReturnValue(0);
+    },
+  };
+});
+
+vi.mock("bun:sqlite", () => ({
+  Database: MockDatabase,
+}));
+
+vi.mock("../../src/utils/searchCache.js", () => ({
+  SearchCache: MockSearchCache,
+}));
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

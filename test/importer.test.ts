@@ -1,4 +1,29 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+const { MockDatabase, MockSearchCache } = vi.hoisted(() => {
+  return {
+    MockDatabase: class MockDatabase {
+      run = vi.fn();
+      prepare = vi.fn().mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+        run: vi.fn(),
+      });
+    },
+    MockSearchCache: class MockSearchCache {
+      get = vi.fn().mockReturnValue(null);
+      set = vi.fn();
+      cleanupExpiredCaches = vi.fn().mockReturnValue(0);
+    },
+  };
+});
+
+vi.mock("bun:sqlite", () => ({
+  Database: MockDatabase,
+}));
+
+vi.mock("../src/utils/searchCache.js", () => ({
+  SearchCache: MockSearchCache,
+}));
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,10 +63,12 @@ vi.mock("../src/core/searcher.js", () => {
 });
 
 const matchTrackToResults = vi.hoisted(() => vi.fn());
+const matchTrackWithCandidates = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/core/matcher.js", () => {
   return {
     matchTrackToResults,
+    matchTrackWithCandidates,
   };
 });
 
@@ -71,6 +98,7 @@ describe("importer.ts", () => {
     csvPath = join(tempDir, "tracks.csv");
     shouldThrowSearch = false;
     matchTrackToResults.mockReset();
+    matchTrackWithCandidates.mockReset();
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -89,7 +117,7 @@ describe("importer.ts", () => {
         "spotify:track:2,Song Two,Album,Artist,180000\n",
     );
 
-    matchTrackToResults.mockImplementation((track) => {
+    matchTrackWithCandidates.mockImplementation((track) => {
       return {
         track,
         youtubeSong: {
@@ -99,6 +127,7 @@ describe("importer.ts", () => {
         },
         confidence: "high",
         matchReason: "exact",
+        candidates: [],
       } as MatchResult;
     });
 

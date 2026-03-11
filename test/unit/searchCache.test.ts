@@ -1,4 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+const { MockDatabase } = vi.hoisted(() => {
+  return {
+    MockDatabase: class MockDatabase {
+      run = vi.fn();
+      prepare = vi.fn().mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+        run: vi.fn(),
+      });
+    },
+  };
+});
+
+vi.mock("bun:sqlite", () => ({
+  Database: MockDatabase,
+}));
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

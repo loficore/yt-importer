@@ -16,10 +16,10 @@ vi.mock("../../src/utils/logger.js", () => ({
   },
 }));
 
-const {
+import {
   testProxyConnection,
   testDirectConnection,
-} = require("../../src/utils/proxy.js");
+} from "../../src/utils/proxy.js";
 
 describe("proxy.ts", () => {
   beforeEach(() => {

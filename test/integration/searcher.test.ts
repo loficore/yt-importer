@@ -4,17 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Searcher from "../../src/core/searcher.js";
 
-const mockInnertubeInstance = {
-  music: {
-    search: vi.fn(),
-  },
-  playlist: {
-    create: vi.fn(),
-    addVideos: vi.fn(),
-  },
-  getPlaylists: vi.fn(),
-  getPlaylist: vi.fn(),
-};
+const { mockInnertubeInstance } = vi.hoisted(() => {
+  const instance = {
+    music: {
+      search: vi.fn(),
+    },
+    playlist: {
+      create: vi.fn(),
+      addVideos: vi.fn(),
+    },
+    getPlaylists: vi.fn(),
+    getPlaylist: vi.fn(),
+  };
+  return { mockInnertubeInstance: instance };
+});
 
 vi.mock("youtubei.js", () => ({
   Innertube: {
