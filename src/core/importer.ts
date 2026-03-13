@@ -5,6 +5,7 @@ import { matchTrackWithCandidates } from "./matcher.js";
 import { SearchUtils } from "./searchUtils.js";
 import { ConcurrentSearcher } from "./conCurrentSearcher.js";
 import { t } from "../utils/i18n.js";
+import { logger } from "../utils/logger.js";
 import type { DB } from "../utils/db.js";
 import { DEFAULT_CONFIG, type ImporterConfig } from "../utils/config.js";
 import { SearchCache } from "../utils/searchCache.js";
@@ -83,6 +84,10 @@ export class Importer {
   private onProgress?: (payload: ImporterProgressPayload) => void;
   private pendingLowConfidence: MatchResultWithCandidates[] = [];
 
+  private readonly initTimeoutMs = 30000;
+
+  private readonly cookieValidationTimeoutMs = 20000;
+
   /**
    * 构造函数
    * @param {ImporterOptions} options 导入选项
@@ -136,12 +141,36 @@ export class Importer {
       location: "US",
       proxy: this.config.proxyUrl,
     };
+
+    logger.info("Importer init started", {
+      csvPath: this.csvPath,
+      hasCookieFile: existsSync(cookiePath),
+      runId: this.runId,
+      proxyEnabled: Boolean(this.config.proxyUrl),
+    });
+
     if (existsSync(cookiePath)) {
       try {
-        await this.searcher.init(innertubeOptions, cookiePath);
+        logger.info("Importer init step: searcher.init with cookies", {
+          timeoutMs: this.initTimeoutMs,
+        });
+        await this.withTimeout(
+          this.searcher.init(innertubeOptions, cookiePath),
+          this.initTimeoutMs,
+          "searcher.init(with cookies)",
+        );
+        logger.info("Importer init step done: searcher.init with cookies");
         console.log(t("searcher_init_with_cookies"));
+        logger.info("Importer init step: validate cookies", {
+          timeoutMs: this.cookieValidationTimeoutMs,
+        });
         await this.validateCookies();
+        logger.info("Importer init step done: validate cookies");
       } catch (error) {
+        logger.error("Importer init failed", {
+          stage: "cookies",
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (SearchUtils.isAuthenticationError(error)) {
           console.error(
             t("cookies_expired", {
@@ -156,9 +185,22 @@ export class Importer {
         throw error;
       }
     } else {
-      await this.searcher.init(innertubeOptions, "");
+      logger.info("Importer init step: searcher.init without cookies", {
+        timeoutMs: this.initTimeoutMs,
+      });
+      await this.withTimeout(
+        this.searcher.init(innertubeOptions, ""),
+        this.initTimeoutMs,
+        "searcher.init(without cookies)",
+      );
+      logger.info("Importer init step done: searcher.init without cookies");
       console.log(t("searcher_init_without_cookies"));
     }
+
+    logger.info("Importer init completed", {
+      runId: this.runId,
+      csvPath: this.csvPath,
+    });
   }
 
   /**
@@ -168,10 +210,17 @@ export class Importer {
   async validateCookies(): Promise<void> {
     try {
       const testQuery = "test";
-      const searchResults = await this.searcher.searchSongs([testQuery]);
+      const searchResults = await this.withTimeout(
+        this.searcher.searchSongs([testQuery]),
+        this.cookieValidationTimeoutMs,
+        "cookie validation search",
+      );
       const songs = SearchUtils.extractSongsFromResults(searchResults);
       if (songs && Array.isArray(songs)) {
         console.log(t("cookies_validation_passed"));
+        logger.info("Cookie validation passed", {
+          candidateCount: songs.length,
+        });
         return;
       }
     } catch (error) {
@@ -186,7 +235,40 @@ export class Importer {
           { cause: error },
         );
       }
+      logger.warn("Cookie validation skipped due to non-auth error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.warn(t("cookies_validation_skipped"));
+    }
+  }
+
+  /**
+   * 为异步步骤添加超时，避免无响应等待。
+   * @template T 返回值类型
+   * @param {Promise<T>} promise 原始 Promise
+   * @param {number} timeoutMs 超时毫秒
+   * @param {string} stage 阶段名称
+   * @returns {Promise<T>} 超时保护后的 Promise
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    stage: string,
+  ): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${stage} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
     }
   }
 

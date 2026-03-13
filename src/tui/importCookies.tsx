@@ -92,7 +92,7 @@ export function ImportCookiesView({
         return;
       }
 
-      if (input === "q" || key.escape || key.return) {
+      if (input === "q" || key.escape) {
         onBack();
         return;
       }
@@ -136,7 +136,7 @@ export function ImportCookiesView({
       )}
 
       <Text dimColor>{"─".repeat(50)}</Text>
-      <Text dimColor>按数字键选择，Enter/q 返回</Text>
+      <Text dimColor>按数字键选择，Esc/q 返回</Text>
     </Box>
   );
 }

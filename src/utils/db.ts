@@ -140,7 +140,9 @@ export class DB {
       /** 表结构信息 */
       const tableInfo = this.db
         .query("PRAGMA table_info(importer_config)")
-        .all() as { name: string }[];
+        .all() as { 
+          /** 列名 */
+          name: string }[];
       /** 是否已存在 proxy_url 字段 */
       const hasProxyUrl = tableInfo.some((col) => col.name === "proxy_url");
 
@@ -563,14 +565,32 @@ export class DB {
    * @returns {DBResult} 表示操作结果的对象
    */
   upsertConfig(config: Record<string, unknown>): DBResult {
+    const existing = (this.getConfig().data ?? {}) as Record<string, unknown>;
+    /**
+     * 检查配置对象中是否包含指定的键
+     * @param {string} key - 要检查的键名
+     * @returns {boolean} 如果配置对象中存在该键，则返回 true；否则返回 false
+     */
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(config, key);
+
     const payload: Record<string, unknown> = {
-      skip_confirmation: config.skipConfirmation ?? null,
-      min_confidence: config.minConfidence ?? null,
-      request_delay: config.requestDelay ?? null,
-      save_progress: config.saveProgress ?? null,
-      progress_db_path: config.progressDbPath ?? null,
-      language: config.language ?? null,
-      proxy_url: config.proxyUrl ?? null,
+      skip_confirmation: has("skipConfirmation")
+        ? config.skipConfirmation
+        : (existing.skip_confirmation ?? null),
+      min_confidence: has("minConfidence")
+        ? config.minConfidence
+        : (existing.min_confidence ?? null),
+      request_delay: has("requestDelay")
+        ? config.requestDelay
+        : (existing.request_delay ?? null),
+      save_progress: has("saveProgress")
+        ? config.saveProgress
+        : (existing.save_progress ?? null),
+      progress_db_path: has("progressDbPath")
+        ? config.progressDbPath
+        : (existing.progress_db_path ?? null),
+      language: has("language") ? config.language : (existing.language ?? null),
+      proxy_url: has("proxyUrl") ? config.proxyUrl : (existing.proxy_url ?? null),
     };
 
     this.db.run(
@@ -640,8 +660,8 @@ export class DB {
 
   /**
    * 删除指定日期之前的运行记录
-   * @param days - 保留天数
-   * @returns 删除的记录数
+   * @param {number} days - 保留天数
+   * @returns {DBResult} 表示操作结果的对象
    */
   cleanupOldRuns(days: number): DBResult {
     const cutoffDate = new Date();
@@ -675,7 +695,7 @@ export class DB {
 
   /**
    * 删除所有运行记录
-   * @returns 删除的记录数
+   * @returns {DBResult} 表示操作结果的对象
    */
   clearAllRuns(): DBResult {
     this.db.run(sql`DELETE FROM import_tracks`);

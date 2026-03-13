@@ -94,7 +94,7 @@ describe("ImportCookiesView", () => {
 
     const output = lastFrame() ?? "";
     expect(output).toContain("按数字键选择");
-    expect(output).toContain("Enter/q 返回");
+    expect(output).toContain("Esc/q 返回");
 
     unmount();
   });
@@ -118,18 +118,6 @@ describe("ImportCookiesView", () => {
     );
 
     stdin.write("\u001b");
-
-    expect(onBack).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-
-  it("should call onBack when enter is pressed", () => {
-    const onBack = vi.fn();
-    const { stdin, unmount } = render(
-      <ImportCookiesView {...defaultProps} onBack={onBack} />,
-    );
-
-    stdin.write("\r");
 
     expect(onBack).toHaveBeenCalledTimes(1);
     unmount();

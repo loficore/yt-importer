@@ -22,7 +22,7 @@ export interface ImportProgressSnapshot {
 /**
  * 进度更新负载：允许部分字段更新，并可包含 `done` 标志。
  */
-type ImportProgressPayload = Partial<ImportProgressSnapshot> & {
+export type ImportProgressPayload = Partial<ImportProgressSnapshot> & {
   /** 可选的完成标志，表示导入处理已完成。 */
   done?: boolean;
 };
@@ -58,7 +58,7 @@ function formatEta(seconds: number): string {
  * @param {ProgressProps} props 组件 props
  * @returns {React.JSX.Element} 渲染的进度视图元素
  */
-function ProgressView({
+export function ProgressView({
   initial,
   subscribe,
 }: ProgressProps): React.JSX.Element {
@@ -110,8 +110,8 @@ function ProgressView({
         {bar} {Math.round(percent * 100)}%
       </Text>
       <Text>
-        进度: {state.processedTracks}/{state.totalTracks} | 匹配: {" "}
-        {state.matchedTracks} | 失败: {state.failedTracks} | 跳过: {" "}
+        进度: {state.processedTracks}/{state.totalTracks} | 匹配:{" "}
+        {state.matchedTracks} | 失败: {state.failedTracks} | 跳过:{" "}
         {state.skippedTracks}
       </Text>
       <Text>匹配成功率: {matchRate.toFixed(1)}%</Text>

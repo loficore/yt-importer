@@ -1,4 +1,6 @@
 import { Innertube } from "youtubei.js";
+import axios from "axios";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { loadCookieHeader } from "@utils/cookies.js";
 import { logger } from "@utils/logger.js";
 import { t } from "@utils/i18n.js";
@@ -35,6 +37,69 @@ export class Searcher {
   private innertube?: Innertube;
 
   /**
+   * 创建可选代理的 fetch 适配器，供 youtubei.js 使用。
+   * @param {string | undefined} proxyUrl 代理 URL
+   * @returns {(input: unknown, init?: unknown) => Promise<unknown>} fetch 兼容函数
+   */
+  private createFetchAdapter(proxyUrl?: string) {
+    /**
+     * 适配器函数，将 fetch 请求转换为 axios 请求，并处理代理配置。
+     * @param {unknown} input 请求输入，可以是 URL 字符串或 Request 对象
+     * @param {unknown} init 请求初始化选项
+     * @returns {Promise<unknown>} 返回一个 Promise，解析为 Response 对象
+     */
+    const adapter = async (input: unknown, init?: RequestInit) => {
+      const request =
+        input instanceof Request
+          ? new Request(input, init)
+          : new Request(String(input), init);
+      const method = request.method.toUpperCase();
+
+      const headers: Record<string, string> = {};
+      request.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+
+      let data: Uint8Array | undefined;
+      if (method !== "GET" && method !== "HEAD") {
+        const bodyBuffer = await request.arrayBuffer();
+        if (bodyBuffer.byteLength > 0) {
+          data = new Uint8Array(bodyBuffer);
+        }
+      }
+
+      const response = await axios.request<ArrayBuffer>({
+        url: request.url,
+        method,
+        headers,
+        data,
+        responseType: "arraybuffer",
+        timeout: 30000,
+        maxRedirects: 5,
+        /**
+         * 禁用状态码验证，允许 axios 返回所有响应以供 youtubei.js 处理
+         * @returns {boolean} 始终返回 true，表示接受所有状态码的响应
+         */
+        validateStatus: () => true,
+        ...(proxyUrl
+          ? {
+            httpsAgent: new HttpsProxyAgent(proxyUrl),
+            proxy: false,
+          }
+          : {}),
+      });
+
+      return new Response(response.data, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers as Record<string, string>,
+      });
+    };
+
+    return adapter as unknown as typeof fetch;
+  }
+
+  /**
    * 初始化Innertube实例
    * @param {InnertubeOptions} options Innertube初始化选项
    * @param {string} source Cookie文件路径
@@ -44,6 +109,8 @@ export class Searcher {
     if (source) {
       options.cookies = await loadCookieHeader(source);
     }
+    const fetchAdapter = this.createFetchAdapter(options.proxy);
+
     const initOptions: {
       /** 语言 */
       lang: string;
@@ -53,8 +120,8 @@ export class Searcher {
       user_agent: string;
       /** cookies数据 */
       cookie?: string;
-      /** 代理URL */
-      proxy?: string;
+      /** 自定义 fetch */
+      fetch: typeof fetch;
     } = {
       lang: options.lang || "en",
       location: options.location || "US",
@@ -62,10 +129,14 @@ export class Searcher {
         options.userAgent ||
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
       cookie: options.cookies,
+      fetch: fetchAdapter,
     };
-    if (options.proxy) {
-      initOptions.proxy = options.proxy;
-    }
+
+    logger.info("Searcher init transport configured", {
+      proxyEnabled: Boolean(options.proxy),
+      hasCookies: Boolean(options.cookies),
+    });
+
     this.innertube = await Innertube.create(initOptions);
   }
 

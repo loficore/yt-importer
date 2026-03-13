@@ -10,27 +10,46 @@ export interface SelectListChoice<T = string> {
   description?: string;
 }
 
+/**
+ * 选择列表的输入键定义，支持箭头键和 Vim 风格的 hjkl 键。
+ */
 export interface SelectListKey {
+  /** 上箭头或 Vim 的 k 键 */
   upArrow?: boolean;
+  /** 下箭头或 Vim 的 j 键 */
   downArrow?: boolean;
+  /** 回车键 */
   return?: boolean;
 }
 
+/** 选择列表的输入动作类型 */
 export type SelectListInputAction = "up" | "down" | "select" | "none";
 
+/** 可渲染的选择列表选项 */
 export interface RenderableSelectListChoice<T = string>
   extends SelectListChoice<T> {
+    /** 当前选项是否处于激活状态（即被选中）。 */
   active: boolean;
 }
 
-/** 返回所有可选项，忽略被禁用的分隔项。 */
+/** 
+ * 返回所有可选项，忽略被禁用的分隔项。 
+ * @template T
+ * @param {SelectListChoice<T>[]} choices  选择列表的所有选项
+ * @returns {SelectListChoice<T>} 仅包含可选项的数组
+ */
 export function getEnabledChoices<T>(
   choices: SelectListChoice<T>[],
 ): SelectListChoice<T>[] {
   return choices.filter((choice) => !choice.disabled);
 }
 
-/** 将输入映射成选择列表动作，便于在不依赖 Ink 的情况下测试。 */
+/** 
+ * 将输入映射成选择列表动作，便于在不依赖 Ink 的情况下测试。 
+ * @param {string} input  输入的字符串
+ * @param {SelectListKey} key  选择列表的输入键
+ * @returns {SelectListInputAction} 映射后的输入动作
+ */
 export function getInputAction(
   input: string,
   key: SelectListKey,
@@ -50,7 +69,14 @@ export function getInputAction(
   return "none";
 }
 
-/** 根据方向移动当前选中索引。 */
+/** 
+ * 根据方向移动当前选中索引。 
+ * @param {number} currentIndex  当前选中的索引
+ * @param {number} enabledCount  可选项的总数
+ * @param {("up" | "down")} direction  移动方向
+ * @param {boolean} loop  是否循环移动
+ * @returns {number} 移动后的索引
+ */
 export function moveSelection(
   currentIndex: number,
   enabledCount: number,
@@ -77,7 +103,13 @@ export function moveSelection(
   return Math.min(enabledCount - 1, safeIndex + 1);
 }
 
-/** 返回当前索引对应的可选项。 */
+/** 
+ * 返回当前索引对应的可选项。 
+ * @template T
+ * @param {SelectListChoice<T>[]} choices  选择列表的所有选项
+ * @param {number} selectedIndex  选中的索引
+ * @returns {SelectListChoice<T> | undefined} 对应的可选项或 undefined
+ */
 export function getSelectedChoice<T>(
   choices: SelectListChoice<T>[],
   selectedIndex: number,
@@ -89,7 +121,13 @@ export function getSelectedChoice<T>(
   return getEnabledChoices(choices)[selectedIndex];
 }
 
-/** 计算每个选项当前的渲染状态，供 UI 层直接消费。 */
+/** 
+ * 计算每个选项当前的渲染状态，供 UI 层直接消费。 
+ * @template T
+ * @param {SelectListChoice<T>[]} choices  选择列表的所有选项
+ * @param {number} selectedIndex  选中的索引
+ * @returns {RenderableSelectListChoice<T>[]} 渲染状态数组
+ */
 export function getRenderableChoices<T>(
   choices: SelectListChoice<T>[],
   selectedIndex: number,

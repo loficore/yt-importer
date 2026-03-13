@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
+import { logger } from "../utils/logger.js";
 
 /** `ConfirmView` 组件的 props。 */
 interface ConfirmProps {
@@ -76,14 +77,39 @@ export async function promptConfirm(params: {
   // 清空终端
   console.clear();
 
+  const promptId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  logger.info("Confirm prompt displayed", {
+    promptId,
+    message: params.message,
+    defaultValue: params.defaultValue ?? false,
+  });
+
   return new Promise<boolean>((resolve) => {
+    const watchdog = setTimeout(() => {
+      logger.warn("Confirm prompt still waiting for submit", {
+        promptId,
+        message: params.message,
+      });
+    }, 15000);
+
     const { unmount } = render(
       <ConfirmView
         message={params.message}
         defaultValue={params.defaultValue}
         onSubmit={(value) => {
+          logger.info("Confirm prompt submitted", {
+            promptId,
+            value,
+          });
+          clearTimeout(watchdog);
           unmount();
-          setTimeout(() => resolve(value), 100);
+          setTimeout(() => {
+            logger.info("Confirm prompt resolved", {
+              promptId,
+              value,
+            });
+            resolve(value);
+          }, 100);
         }}
       />,
     );

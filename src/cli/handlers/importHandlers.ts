@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { glob } from "glob";
 import { Importer } from "../../core/importer.js";
 import type { ImporterOptions } from "../../core/importer.js";
-import { validateConfig, setDefaultConfig } from "../../utils/config.js";
+import { validateConfig, setDefaultConfig, getConfig } from "../../utils/config.js";
 import { getCurrentLanguage } from "../../utils/i18n.js";
 import { DB } from "../../utils/db.js";
 import { fileWatcher } from "../../utils/fileWatcher.js";
+import { logger } from "../../utils/logger.js";
 import {
   promptForImport,
   promptForImportOptions,
@@ -34,7 +36,6 @@ import {
 } from "../../tui/importSummary.js";
 import { t } from "../../utils/i18n.js";
 import { loadCookieHeader } from "../../utils/cookies.js";
-import { importCookiesTui } from "../../tui/importCookies.js";
 
 const db = new DB("./import-progress.sqlite");
 
@@ -52,6 +53,7 @@ export async function handleNewImport(): Promise<void> {
     return;
   }
 
+  const currentConfig = getConfig();
   const config = validateConfig({
     minConfidence: answers.minConfidence,
     requestDelay: answers.requestDelay,
@@ -59,6 +61,7 @@ export async function handleNewImport(): Promise<void> {
     saveProgress: false,
     progressDbPath: "./import-progress.sqlite",
     language: getCurrentLanguage(),
+    proxyUrl: currentConfig.proxyUrl,
   });
   setDefaultConfig(config);
 
@@ -172,10 +175,21 @@ export async function handleNewImport(): Promise<void> {
  * 处理导入恢复
  */
 export async function handleResume(): Promise<void> {
+  logger.info("Resume flow started");
   const run = await selectRun();
   if (!run) {
+    logger.info("Resume flow cancelled: no run selected");
     return;
   }
+
+  logger.info("Resume run selected", {
+    runId: run.run_id,
+    status: run.status,
+    totalTracks: run.total_tracks,
+    processedTracks: run.processed_tracks,
+  });
+
+  let isReimport = false;
 
   if (run.status === "running") {
     const isCompleted = run.processed_tracks >= run.total_tracks;
@@ -185,15 +199,18 @@ export async function handleResume(): Promise<void> {
         defaultValue: false,
       });
       if (!confirm) {
+        logger.info("Resume flow cancelled: user rejected completed status fix");
         return;
       }
       db.updateRunStatus(run.run_id, "completed");
+      logger.info("Resume run status updated to completed", { runId: run.run_id });
     } else {
       const confirm = await promptConfirm({
         message: "此导入正在运行中，是否继续?",
         defaultValue: true,
       });
       if (!confirm) {
+        logger.info("Resume flow cancelled: user rejected continue running run");
         return;
       }
     }
@@ -208,17 +225,27 @@ export async function handleResume(): Promise<void> {
       defaultValue: false,
     });
     if (!confirm) {
+      logger.info("Resume flow cancelled: user rejected reimport completed run");
       return;
     }
+    isReimport = true;
+    logger.info("Resume flow switched to reimport mode", { runId: run.run_id });
   }
 
+  logger.info("Resume flow prompting import options", { isReimport });
   const answers = await promptForImportOptions();
+  logger.info("Resume import options received", {
+    minConfidence: answers.minConfidence,
+    requestDelay: answers.requestDelay,
+    skipConfirmation: answers.skipConfirmation,
+  });
 
   if (!existsSync(run.csv_path)) {
     await showError(t("error_csv_not_found", { path: run.csv_path }));
     return;
   }
 
+  const currentConfig = getConfig();
   const config = validateConfig({
     minConfidence: answers.minConfidence,
     requestDelay: answers.requestDelay,
@@ -226,10 +253,20 @@ export async function handleResume(): Promise<void> {
     saveProgress: false,
     progressDbPath: "./import-progress.sqlite",
     language: getCurrentLanguage(),
+    proxyUrl: currentConfig.proxyUrl,
   });
   setDefaultConfig(config);
 
-  const processedKeysResult = db.getProcessedTrackKeys(run.run_id);
+  const activeRunId = isReimport ? randomUUID() : run.run_id;
+  logger.info("Resume active run decided", {
+    originalRunId: run.run_id,
+    activeRunId,
+    isReimport,
+  });
+
+  const processedKeysResult = isReimport
+    ? { data: [] }
+    : db.getProcessedTrackKeys(run.run_id);
   const processedKeys = new Set<string>(
     Array.isArray(processedKeysResult.data)
       ? processedKeysResult.data
@@ -245,11 +282,15 @@ export async function handleResume(): Promise<void> {
         .filter((key): key is string => Boolean(key))
       : [],
   );
+  logger.info("Resume processed keys loaded", {
+    runId: activeRunId,
+    processedKeysCount: processedKeys.size,
+  });
 
   const importerOptions: ImporterOptions = {
     csvPath: run.csv_path,
     config,
-    runId: run.run_id,
+    runId: activeRunId,
     db,
     processedTrackKeys: processedKeys,
   };
@@ -260,7 +301,27 @@ export async function handleResume(): Promise<void> {
     importer = new Importer(importerOptions);
 
     await importer.init();
+    logger.info("Resume importer initialized", { runId: activeRunId });
     importer.loadCsv();
+    logger.info("Resume CSV loaded", {
+      runId: activeRunId,
+      totalTracks: importer.getStats().total,
+    });
+
+    if (isReimport) {
+      db.createRUN({
+        runId: activeRunId,
+        csvPath: run.csv_path,
+        createdAt: Date.now(),
+        status: "running",
+        totalTracks: importer.getStats().total,
+        processedTracks: 0,
+        matchedTracks: 0,
+        failedTracks: 0,
+        skippedTracks: 0,
+        playlistId: undefined,
+      });
+    }
 
     if (process.stdout.isTTY) {
       progressTui = createImportProgressTui({
@@ -276,6 +337,17 @@ export async function handleResume(): Promise<void> {
     }
 
     const results = await importer.processTracks();
+    logger.info("Resume tracks processed", {
+      runId: activeRunId,
+      resultCount: results.length,
+      stats: importer.getStats(),
+    });
+
+    progressTui?.stop();
+    progressTui = undefined;
+    logger.info("Resume progress TUI stopped before confirmation prompts", {
+      runId: activeRunId,
+    });
 
     importer.printSummary();
 
@@ -317,10 +389,15 @@ export async function handleResume(): Promise<void> {
       await showWarning(t("no_new_tracks_to_import"));
     }
 
-    db.updateRunStatus(run.run_id, "completed");
+    db.updateRunStatus(activeRunId, "completed");
+    logger.info("Resume run completed", { runId: activeRunId });
   } catch (error) {
     progressTui?.stop();
-    db.updateRunStatus(run.run_id, "failed");
+    db.updateRunStatus(activeRunId, "failed");
+    logger.error("Resume flow failed", {
+      runId: activeRunId,
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     const errorMessage = error instanceof Error ? error.message : String(error);
     const { promptErrorDialog } = await import("../../tui/errorDialog.js");
@@ -336,6 +413,7 @@ export async function handleResume(): Promise<void> {
     });
   } finally {
     progressTui?.stop();
+    logger.info("Resume flow finished", { runId: activeRunId });
   }
 }
 
@@ -393,6 +471,7 @@ export async function handleBatchImport(): Promise<void> {
     playlistNames.push(String(name || "").trim() || fileName);
   }
 
+  const currentConfig = getConfig();
   const config = validateConfig({
     minConfidence: "low",
     requestDelay: 1500,
@@ -400,6 +479,7 @@ export async function handleBatchImport(): Promise<void> {
     saveProgress: false,
     progressDbPath: "./import-progress.sqlite",
     language: getCurrentLanguage(),
+    proxyUrl: currentConfig.proxyUrl,
   });
   setDefaultConfig(config);
 
@@ -565,6 +645,7 @@ export async function handleIncrementalImport(): Promise<void> {
     return;
   }
 
+  const currentConfig = getConfig();
   const config = validateConfig({
     minConfidence: "low",
     requestDelay: 1500,
@@ -572,6 +653,7 @@ export async function handleIncrementalImport(): Promise<void> {
     saveProgress: false,
     progressDbPath: "./import-progress.sqlite",
     language: getCurrentLanguage(),
+    proxyUrl: currentConfig.proxyUrl,
   });
   setDefaultConfig(config);
 
@@ -824,7 +906,7 @@ export async function handleUpdateCookies(): Promise<void> {
    * @returns {Promise<string | null>} 返回导入的文件路径（字符串）或 null（如果用户取消选择或导入失败）
    */
   const selectNewFile = async (): Promise<string | null> => {
-    const filePath = await promptForCsvFile();
+    const filePath = await promptForCookieFile();
     if (filePath) {
       cookieFilePath = filePath;
     }
@@ -869,15 +951,133 @@ export async function handleUpdateCookies(): Promise<void> {
     }
   };
 
-  await importCookiesTui({
-    currentCookiePath: cookieFilePath,
-    autoWatchEnabled,
-    onImport: validateAndImportCookies,
-    onSelectFile: selectNewFile,
-    onToggleAutoWatch: toggleAutoWatch,
-  });
+  while (true) {
+    const currentPathLabel = existsSync(cookieFilePath)
+      ? `✓ ${cookieFilePath}`
+      : `✗ ${cookieFilePath}`;
+    const action = await promptSelectList({
+      message: `Cookies 设置\n当前文件: ${currentPathLabel}\n自动监控: ${autoWatchEnabled ? "开启" : "关闭"}`,
+      choices: [
+        { name: "导入当前文件", value: "import" },
+        { name: "选择新的 Cookies 文件", value: "select" },
+        {
+          name: `自动监控: ${autoWatchEnabled ? "关闭" : "开启"}`,
+          value: "watch",
+        },
+        { name: t("menu_back"), value: "back" },
+      ],
+    });
+
+    if (action === "back") {
+      break;
+    }
+
+    if (action === "import") {
+      const result = await validateAndImportCookies();
+      if (result.success) {
+        await showSuccess(result.message);
+      } else {
+        await showError(result.message);
+      }
+      continue;
+    }
+
+    if (action === "select") {
+      const filePath = await selectNewFile();
+      if (!filePath) {
+        continue;
+      }
+      const result = await validateAndImportCookies();
+      if (result.success) {
+        await showSuccess(result.message);
+      } else {
+        await showError(result.message);
+      }
+      continue;
+    }
+
+    if (action === "watch") {
+      await toggleAutoWatch();
+      await showInfo(
+        `自动监控已${autoWatchEnabled ? "开启" : "关闭"}`,
+      );
+    }
+  }
 
   if (cleanupFn !== null) {
     (cleanupFn as () => void)();
+  }
+}
+
+/**
+ * 提示用户选择 Cookies 文件路径。
+ * 支持从候选列表中选择，或手动输入路径。
+ * @returns {Promise<string | null>} 用户选择的 Cookies 文件路径，若取消则返回 null。
+ */
+async function promptForCookieFile(): Promise<string | null> {
+  const cookieFiles = await findCookieFiles();
+
+  if (cookieFiles.length > 0) {
+    const selectedFile = await promptSelectList({
+      message: "选择要导入的 Cookies 文件:",
+      choices: [
+        { name: t("menu_back"), value: "back" },
+        { name: "浏览其他文件...", value: "browse" },
+        { name: "──────────", value: "separator", disabled: true },
+        ...cookieFiles.map((file) => ({
+          name: file,
+          value: file,
+        })),
+      ],
+    });
+
+    if (selectedFile === "back") {
+      return null;
+    }
+    if (selectedFile !== "browse") {
+      return selectedFile;
+    }
+  }
+
+  const customPath = await promptTextInput({
+    message: "输入 Cookies 文件路径:",
+    /**
+     * 验证用户输入的 Cookies 文件路径。
+     * @param {string} input 用户输入路径
+     * @returns {true | string} 校验通过返回 true，否则返回错误信息
+     */
+    validate: (input: string) => {
+      if (!input.trim()) {
+        return true;
+      }
+      if (!existsSync(input)) {
+        return t("csv_validate_not_found");
+      }
+      if (!/\.(json|txt)$/i.test(input)) {
+        return "文件扩展名应为 .json 或 .txt";
+      }
+      return true;
+    },
+  });
+
+  if (!customPath.trim()) {
+    return null;
+  }
+
+  return customPath;
+}
+
+/**
+ * 搜索工作区中的 Cookies 文件候选。
+ * @returns {Promise<string[]>} 候选 Cookies 文件路径列表。
+ */
+async function findCookieFiles(): Promise<string[]> {
+  try {
+    const files = await glob(["**/*.{json,txt}", "!node_modules/**"]);
+    return files
+      .filter((file) => /cookie/i.test(file.split("/").pop() || ""))
+      .sort();
+  } catch {
+    return [];
   }
 }

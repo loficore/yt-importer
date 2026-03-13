@@ -22,6 +22,7 @@
 - [ ] 失败曲目批量重试
   - [ ] 批量选择失败歌曲
   - [ ] 批量使用不同搜索策略重试
+- [ ] 歌曲去重工具（CSV 文件内去重）
 
 #### 搜索增强
 
@@ -31,6 +32,16 @@
 - [ ] 相似歌曲推荐
   - [ ] 利用 YouTube 的推荐算法
   - [ ] 作为备选搜索策略
+
+### 运维工具
+
+- [ ] 健康检查命令（检查 cookies、代理、网络）
+- [ ] CSV 验证工具（导入前检查文件格式）
+- [ ] 配置导出/导入（备份和迁移配置）
+
+### 数据管理
+
+- [ ] 导入历史记录（记录每次导入的详情）
 
 ### 测试覆盖
 
@@ -45,6 +56,22 @@
 - [x] Cookies 处理测试（cookies.ts）
 - [x] 代理测试（proxy.ts）
 - [x] 文件监视测试（fileWatcher.ts）
+- [x] TUI 组件测试（所有 15 个组件）
+  - [x] checkbox 组件测试
+  - [x] confirm 组件测试
+  - [x] errorDialog 组件测试
+  - [x] importCookies 组件测试
+  - [x] importSummary 组件测试
+  - [x] lowConfidenceResolver 组件测试
+  - [x] mainMenu 组件测试
+  - [x] notification 组件测试
+  - [x] pressKey 组件测试
+  - [x] progress 组件测试
+  - [x] proxyTestResult 组件测试
+  - [x] selectList 组件测试
+  - [x] textInput 组件测试
+  - [x] viewFailed 组件测试
+  - [x] viewProgress 组件测试
 - [ ] Searcher 模块测试（需要 Mock youtubei.js）
 - [ ] CLI 交互测试（需要 Mock TUI）
 - [ ] 集成测试
