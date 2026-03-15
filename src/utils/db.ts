@@ -152,7 +152,7 @@ export class DB {
           ALTER TABLE importer_config
           ADD COLUMN proxy_url TEXT
         `);
-        console.log("Database migrated: Added proxy_url column");
+        console.log(t("db_migration_completed"));
       }
     } catch (error) {
       // 如果表不存在或迁移失败，忽略错误（表刚创建时已包含该字段）

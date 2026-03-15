@@ -7,6 +7,7 @@ import {
   type ImporterConfig,
 } from "../types/index.js";
 import { DB, IMPORT } from "./constants.js";
+import { t } from "./i18n.js";
 
 export type { MatchConfidence, Language, ImporterConfig };
 export { MatchConfidenceEnum, LanguageEnum, ImporterConfigSchema };
@@ -91,7 +92,9 @@ export function validateConfig(
     return result.data;
   }
   console.warn(
-    `Config validation failed: ${result.error.errors.map((e) => e.message).join(", ")}`,
+    t("config_validation_failed", {
+      errors: result.error.errors.map((e) => e.message).join(", "),
+    }),
   );
   return { ...DEFAULT_CONFIG };
 }

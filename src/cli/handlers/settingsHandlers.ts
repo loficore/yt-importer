@@ -158,7 +158,7 @@ export async function handleCleanupProgress(): Promise<void> {
         continue;
       }
       db.clearAllRuns();
-      console.log("已清空所有历史记录");
+      console.log(t("settings_cleanup_completed"));
       return;
     }
 
@@ -171,7 +171,7 @@ export async function handleCleanupProgress(): Promise<void> {
       continue;
     }
     db.cleanupOldRuns(days);
-    console.log(`已清理 ${days} 天前的记录`);
+    console.log(t("settings_cleanup_days_completed", { days }));
     return;
   }
 }

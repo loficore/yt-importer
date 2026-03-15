@@ -35,8 +35,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 *.zip
 example_csv/
-.github/
 AGENTS.md
+.github/copilot-instructions.md
 
 config/
 
