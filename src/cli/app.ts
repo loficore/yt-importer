@@ -14,7 +14,11 @@ import {
   handleViewFailed,
 } from "./handlers/viewHandlers.js";
 import { handleGenerateReport } from "./handlers/reportHandlers.js";
-import { handleSettings, handleLanguage } from "./handlers/settingsHandlers.js";
+import {
+  handleSettings,
+  handleLanguage,
+  handleTools,
+} from "./handlers/settingsHandlers.js";
 
 const db = new DB("./import-progress.sqlite");
 const searchCache = new SearchCache("./import-progress.sqlite");
@@ -31,8 +35,9 @@ export type MainMenuAction =
   | "failed"
   | "report"
   | "settings"
-  | "exit"
-  | "language";
+  | "tools"
+  | "language"
+  | "exit";
 
 /**
  * 主菜单选项。
@@ -74,6 +79,7 @@ export const MENU_CHOICES: MenuChoice[] = [
   { labelKey: "menu_failed", value: "failed" },
   { labelKey: "menu_report", value: "report" },
   { labelKey: "menu_settings", value: "settings" },
+  { labelKey: "menu_tools", value: "tools" },
   { labelKey: "menu_language", value: "language" },
   { labelKey: "menu_exit", value: "exit" },
 ];
@@ -130,6 +136,9 @@ export async function runMainLoop(): Promise<void> {
         break;
       case "settings":
         await handleSettings();
+        break;
+      case "tools":
+        await handleTools();
         break;
       case "language":
         await handleLanguage();

@@ -140,15 +140,17 @@ export class DB {
       /** 表结构信息 */
       const tableInfo = this.db
         .query("PRAGMA table_info(importer_config)")
-        .all() as { 
-          /** 列名 */
-          name: string }[];
+        .all() as {
+        /** 列名 */
+        name: string;
+      }[];
       /** 是否已存在 proxy_url 字段 */
       const hasProxyUrl = tableInfo.some((col) => col.name === "proxy_url");
 
       if (!hasProxyUrl) {
         this.db.run(sql`
-          ALTER TABLE importer_config ADD COLUMN proxy_url TEXT
+          ALTER TABLE importer_config
+          ADD COLUMN proxy_url TEXT
         `);
         console.log("Database migrated: Added proxy_url column");
       }
@@ -571,7 +573,8 @@ export class DB {
      * @param {string} key - 要检查的键名
      * @returns {boolean} 如果配置对象中存在该键，则返回 true；否则返回 false
      */
-    const has = (key: string) => Object.prototype.hasOwnProperty.call(config, key);
+    const has = (key: string) =>
+      Object.prototype.hasOwnProperty.call(config, key);
 
     const payload: Record<string, unknown> = {
       skip_confirmation: has("skipConfirmation")
@@ -590,7 +593,9 @@ export class DB {
         ? config.progressDbPath
         : (existing.progress_db_path ?? null),
       language: has("language") ? config.language : (existing.language ?? null),
-      proxy_url: has("proxyUrl") ? config.proxyUrl : (existing.proxy_url ?? null),
+      proxy_url: has("proxyUrl")
+        ? config.proxyUrl
+        : (existing.proxy_url ?? null),
     };
 
     this.db.run(

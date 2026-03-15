@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 
-
 /**
  * 单个复选项的定义。
  * @template T 值的类型。
@@ -233,4 +232,3 @@ export async function promptCheckbox<T = string>(params: {
     );
   });
 }
-

@@ -83,9 +83,9 @@ export class Searcher {
         validateStatus: () => true,
         ...(proxyUrl
           ? {
-            httpsAgent: new HttpsProxyAgent(proxyUrl),
-            proxy: false,
-          }
+              httpsAgent: new HttpsProxyAgent(proxyUrl),
+              proxy: false,
+            }
           : {}),
       });
 

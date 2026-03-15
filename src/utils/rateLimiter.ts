@@ -55,9 +55,7 @@ export class RateLimiter {
 
       // 如果没有令牌，等待一段时间后重试
       if (this.tokens <= 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, 10),
-        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
     }
   }

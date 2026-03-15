@@ -220,9 +220,10 @@ export function generateReport(runId: string, db: DB): ImportReport | null {
   let lowConfidence = 0;
 
   for (const matched of matchedTracksData) {
-    const m = matched as { 
+    const m = matched as {
       /** 匹配结果 JSON 字符串 */
-      match_result_json: string };
+      match_result_json: string;
+    };
     try {
       const matchResult = JSON.parse(m.match_result_json);
       if (matchResult.confidence === "high") highConfidence++;

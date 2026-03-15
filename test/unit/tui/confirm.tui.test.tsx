@@ -20,7 +20,11 @@ describe("ConfirmView", () => {
   it("should submit true when default value is true", () => {
     const onSubmit = vi.fn();
     const { stdin, unmount } = render(
-      <ConfirmView message="Continue?" defaultValue={true} onSubmit={onSubmit} />,
+      <ConfirmView
+        message="Continue?"
+        defaultValue={true}
+        onSubmit={onSubmit}
+      />,
     );
 
     stdin.write("\r");

@@ -13,22 +13,14 @@ export type Language = z.infer<typeof LanguageEnum>;
 export const ImporterConfigSchema = z.object({
   skipConfirmation: z.boolean().default(false),
   minConfidence: MatchConfidenceEnum.default("low"),
-  requestDelay: z
-    .number()
-    .min(100)
-    .max(60000)
-    .default(1500),
+  requestDelay: z.number().min(100).max(60000).default(1500),
   saveProgress: z.boolean().default(true),
   progressFile: z.string().default("./import-progress.json"),
   progressDbPath: z.string().default("import-progress.sqlite"),
   language: LanguageEnum.default("en"),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
   maxRetries: z.number().min(0).max(10).default(3),
-  retryDelay: z
-    .number()
-    .min(100)
-    .max(10000)
-    .default(2000),
+  retryDelay: z.number().min(100).max(10000).default(2000),
   enableCache: z.boolean().default(true),
   cachePath: z.string().default("search-cache.sqlite"),
   batchSize: z.number().min(1).max(100).default(50),

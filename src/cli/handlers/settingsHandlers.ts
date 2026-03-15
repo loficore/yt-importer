@@ -6,12 +6,14 @@ import {
 import { showProxyTestResult } from "../../tui/proxyTestResult.js";
 import { promptSelectList } from "../../tui/selectList.js";
 import { promptTextInput } from "../../tui/textInput.js";
+import { promptPressKey } from "../../tui/pressKey.js";
 import { promptConfirm } from "../../tui/confirm.js";
 
 import { t, setLanguage, type Language } from "../../utils/i18n.js";
 import { handleUpdateCookies } from "./importHandlers.js";
 import { DB } from "../../utils/db.js";
 import { CLEANUP } from "../../utils/constants.js";
+import { validateCsv } from "../../core/csvValidator.js";
 
 const db = new DB("./import-progress.sqlite");
 
@@ -171,5 +173,97 @@ export async function handleCleanupProgress(): Promise<void> {
     db.cleanupOldRuns(days);
     console.log(`已清理 ${days} 天前的记录`);
     return;
+  }
+}
+
+/**
+ * 处理 CSV 文件验证
+ */
+export async function handleValidateCsv(): Promise<void> {
+  while (true) {
+    const filePath = await promptTextInput({
+      message: "输入 CSV 文件路径",
+      defaultValue: "",
+    });
+
+    if (!filePath || filePath.trim() === "") {
+      continue;
+    }
+
+    const trimmedPath = filePath.trim();
+
+    console.log("");
+    const result = await validateCsv(trimmedPath);
+
+    console.clear();
+    console.log("");
+    console.log(`📁 文件: ${trimmedPath}`);
+    console.log("─".repeat(50));
+
+    if (result.isValid) {
+      console.log("✅ 验证通过 - 该 CSV 文件格式正确\n");
+    } else {
+      console.log("❌ 验证失败 - 发现以下问题:\n");
+    }
+
+    console.log(`总行数: ${result.totalRows}`);
+    console.log(`有效曲目: ${result.validTracks}`);
+    console.log(`错误: ${result.errors.length} 个`);
+    console.log(`警告: ${result.warnings.length} 个`);
+    console.log("");
+
+    if (result.errors.length > 0) {
+      console.log("--- 错误详情 ---");
+      const errorMap = new Map<string, number>();
+      for (const err of result.errors) {
+        const key = `${err.column}: ${err.message}`;
+        errorMap.set(key, (errorMap.get(key) || 0) + 1);
+      }
+      for (const [key, count] of errorMap) {
+        console.log(`  • ${key} (${count} 次)`);
+      }
+      console.log("");
+    }
+
+    if (result.warnings.length > 0) {
+      console.log("--- 警告 ---");
+      for (const warn of result.warnings) {
+        console.log(`  • ${warn.message}`);
+      }
+      console.log("");
+    }
+
+    console.log("─".repeat(50));
+
+    await promptPressKey("按 Enter 键继续...");
+
+    const action = await promptSelectList({
+      message: "验证其他文件?",
+      choices: [
+        { name: "继续验证", value: "continue" },
+        { name: t("menu_back"), value: "back" },
+      ],
+    });
+
+    if (action === "back") {
+      return;
+    }
+  }
+}
+
+/**
+ * 处理杂项工具菜单
+ */
+export async function handleTools(): Promise<void> {
+  const tool = await promptSelectList({
+    message: "杂项工具",
+    choices: [
+      { name: "CSV 文件验证", value: "validate_csv" },
+      { name: t("menu_back"), value: "back" },
+    ],
+  });
+
+  if (tool === "validate_csv") {
+    await handleValidateCsv();
   }
 }

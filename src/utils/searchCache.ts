@@ -155,10 +155,10 @@ export class SearchCache {
     );
 
     const result = this.db.prepare("SELECT changes() as count").get() as
-      | { 
-        /** 删除的数量 */
-        count: number
-       }
+      | {
+          /** 删除的数量 */
+          count: number;
+        }
       | undefined;
     const deletedCount = result?.count || 0;
     if (deletedCount > 0) {

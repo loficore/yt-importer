@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { glob } from "glob";
 import { Importer } from "../../core/importer.js";
 import type { ImporterOptions } from "../../core/importer.js";
-import { validateConfig, setDefaultConfig, getConfig } from "../../utils/config.js";
+import {
+  validateConfig,
+  setDefaultConfig,
+  getConfig,
+} from "../../utils/config.js";
 import { getCurrentLanguage } from "../../utils/i18n.js";
 import { DB } from "../../utils/db.js";
 import { fileWatcher } from "../../utils/fileWatcher.js";
@@ -160,10 +164,10 @@ export async function handleNewImport(): Promise<void> {
       errorMessage,
       stats: importer
         ? {
-          total: importer.getStats().total,
-          matched: importer.getStats().matched,
-          failed: importer.getStats().importFailed,
-        }
+            total: importer.getStats().total,
+            matched: importer.getStats().matched,
+            failed: importer.getStats().importFailed,
+          }
         : { total: 0, matched: 0, failed: 0 },
     });
   } finally {
@@ -199,18 +203,24 @@ export async function handleResume(): Promise<void> {
         defaultValue: false,
       });
       if (!confirm) {
-        logger.info("Resume flow cancelled: user rejected completed status fix");
+        logger.info(
+          "Resume flow cancelled: user rejected completed status fix",
+        );
         return;
       }
       db.updateRunStatus(run.run_id, "completed");
-      logger.info("Resume run status updated to completed", { runId: run.run_id });
+      logger.info("Resume run status updated to completed", {
+        runId: run.run_id,
+      });
     } else {
       const confirm = await promptConfirm({
         message: "此导入正在运行中，是否继续?",
         defaultValue: true,
       });
       if (!confirm) {
-        logger.info("Resume flow cancelled: user rejected continue running run");
+        logger.info(
+          "Resume flow cancelled: user rejected continue running run",
+        );
         return;
       }
     }
@@ -225,7 +235,9 @@ export async function handleResume(): Promise<void> {
       defaultValue: false,
     });
     if (!confirm) {
-      logger.info("Resume flow cancelled: user rejected reimport completed run");
+      logger.info(
+        "Resume flow cancelled: user rejected reimport completed run",
+      );
       return;
     }
     isReimport = true;
@@ -270,16 +282,16 @@ export async function handleResume(): Promise<void> {
   const processedKeys = new Set<string>(
     Array.isArray(processedKeysResult.data)
       ? processedKeysResult.data
-        .map(
-          (row) =>
-            (
-              row as {
-                /** 歌曲键 */
-                track_key?: string;
-              }
-            ).track_key,
-        )
-        .filter((key): key is string => Boolean(key))
+          .map(
+            (row) =>
+              (
+                row as {
+                  /** 歌曲键 */
+                  track_key?: string;
+                }
+              ).track_key,
+          )
+          .filter((key): key is string => Boolean(key))
       : [],
   );
   logger.info("Resume processed keys loaded", {
@@ -405,10 +417,10 @@ export async function handleResume(): Promise<void> {
       errorMessage,
       stats: importer
         ? {
-          total: importer.getStats().total,
-          matched: importer.getStats().matched,
-          failed: importer.getStats().importFailed,
-        }
+            total: importer.getStats().total,
+            matched: importer.getStats().matched,
+            failed: importer.getStats().importFailed,
+          }
         : { total: 0, matched: 0, failed: 0 },
     });
   } finally {
@@ -607,10 +619,10 @@ export async function handleBatchImport(): Promise<void> {
         errorMessage,
         stats: importer
           ? {
-            total: importer.getStats().total,
-            matched: importer.getStats().matched,
-            failed: importer.getStats().importFailed,
-          }
+              total: importer.getStats().total,
+              matched: importer.getStats().matched,
+              failed: importer.getStats().importFailed,
+            }
           : { total: 0, matched: 0, failed: 0 },
       });
 
@@ -770,10 +782,10 @@ export async function handleIncrementalImport(): Promise<void> {
       errorMessage,
       stats: importer
         ? {
-          total: importer.getStats().total,
-          matched: importer.getStats().matched,
-          failed: importer.getStats().importFailed,
-        }
+            total: importer.getStats().total,
+            matched: importer.getStats().matched,
+            failed: importer.getStats().importFailed,
+          }
         : { total: 0, matched: 0, failed: 0 },
     });
   } finally {
@@ -998,9 +1010,7 @@ export async function handleUpdateCookies(): Promise<void> {
 
     if (action === "watch") {
       await toggleAutoWatch();
-      await showInfo(
-        `自动监控已${autoWatchEnabled ? "开启" : "关闭"}`,
-      );
+      await showInfo(`自动监控已${autoWatchEnabled ? "开启" : "关闭"}`);
     }
   }
 
