@@ -13,7 +13,13 @@ import { t, setLanguage, type Language } from "../../utils/i18n.js";
 import { handleUpdateCookies } from "./importHandlers.js";
 import { DB } from "../../utils/db.js";
 import { CLEANUP } from "../../utils/constants.js";
-import { validateCsv } from "../../core/csvValidator.js";
+import {
+  validateCsv,
+  deduplicateCsv,
+  saveDeduplicatedCsv,
+  type DedupeOption,
+} from "../../core/csvValidator.js";
+import { parseCsv } from "../../core/csvParser.js";
 
 const db = new DB("./import-progress.sqlite");
 
@@ -231,6 +237,42 @@ export async function handleValidateCsv(): Promise<void> {
         console.log(`  • ${warn.message}`);
       }
       console.log("");
+
+      const duplicateWarning = result.warnings.find(
+        (w) => w.duplicateUris && w.duplicateUris.length > 0,
+      );
+      if (duplicateWarning && duplicateWarning.duplicateUris) {
+        const dedupeAction = await promptSelectList({
+          message: "发现重复曲目，是否进行去重处理?",
+          choices: [
+            { name: "保留第一个出现的", value: "keep_first" },
+            { name: "保留最后一个出现的", value: "keep_last" },
+            { name: "不处理", value: "none" },
+          ],
+        });
+
+        if (dedupeAction !== "none") {
+          try {
+            const { readFile } = await import("fs/promises");
+            const content = await readFile(trimmedPath, "utf-8");
+            const rows = await parseCsv(content);
+            const deduplicated = deduplicateCsv(
+              rows,
+              dedupeAction as DedupeOption,
+            );
+
+            const outputPath = trimmedPath.replace(".csv", `_deduplicated.csv`);
+            await saveDeduplicatedCsv(deduplicated, outputPath);
+
+            console.log(
+              `\n✅ 去重完成！原始: ${rows.length} 行 → 去重后: ${deduplicated.length} 行`,
+            );
+            console.log(`📁 已保存到: ${outputPath}`);
+          } catch (err) {
+            console.log(`❌ 去重失败: ${err}`);
+          }
+        }
+      }
     }
 
     console.log("─".repeat(50));
@@ -256,14 +298,18 @@ export async function handleValidateCsv(): Promise<void> {
  */
 export async function handleTools(): Promise<void> {
   const tool = await promptSelectList({
-    message: "杂项工具",
+    message: t("menu_tools"),
     choices: [
-      { name: "CSV 文件验证", value: "validate_csv" },
+      { name: t("tool_validate_csv"), value: "validate_csv" },
+      { name: t("tool_batch_retry"), value: "batch_retry" },
       { name: t("menu_back"), value: "back" },
     ],
   });
 
   if (tool === "validate_csv") {
     await handleValidateCsv();
+  } else if (tool === "batch_retry") {
+    const { handleBatchRetry } = await import("./retryHandlers.js");
+    await handleBatchRetry();
   }
 }

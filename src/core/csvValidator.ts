@@ -43,6 +43,8 @@ export interface ValidationWarning {
   message: string;
   /** 数量（可选） */
   count?: number;
+  /** 重复的 URI 列表（仅重复检测时） */
+  duplicateUris?: string[];
 }
 
 /** 必需的 CSV 列 */
@@ -210,6 +212,7 @@ export async function validateCsv(filePath: string): Promise<ValidationResult> {
     warnings.push({
       message: `发现 ${duplicateUris.length} 个重复的 Track URI`,
       count: duplicateUris.length,
+      duplicateUris,
     });
   }
 
@@ -225,4 +228,78 @@ export async function validateCsv(filePath: string): Promise<ValidationResult> {
   });
 
   return { isValid, totalRows, validTracks, errors, warnings };
+}
+
+/**
+ * 去重选项
+ */
+export type DedupeOption = "keep_first" | "keep_last" | "none";
+
+/**
+ * 根据 URI 对 CSV 数据去重
+ * @param {Record<string, string>[]} rows CSV 行数据
+ * @param {DedupeOption} option 去重选项
+ * @returns {Record<string, string>[]} 去重后的行数据
+ */
+export function deduplicateCsv(
+  rows: Record<string, string>[],
+  option: DedupeOption,
+): Record<string, string>[] {
+  if (option === "none") {
+    return rows;
+  }
+
+  const seen = new Set<string>();
+  const result: Record<string, string>[] = [];
+
+  if (option === "keep_first") {
+    for (const row of rows) {
+      const uri = String(row["Track URI"] || "").trim();
+      if (!uri || !seen.has(uri)) {
+        seen.add(uri);
+        result.push(row);
+      }
+    }
+  } else if (option === "keep_last") {
+    const reversed = [...rows].reverse();
+    for (const row of reversed) {
+      const uri = String(row["Track URI"] || "").trim();
+      if (!uri || !seen.has(uri)) {
+        seen.add(uri);
+        result.push(row);
+      }
+    }
+    result.reverse();
+  }
+
+  return result;
+}
+
+/**
+ * 将行数据保存为 CSV 文件
+ * @param {Record<string, string>[]} rows 行数据
+ * @param {string} outputPath 输出路径
+ * @returns {Promise<void>}
+ */
+export async function saveDeduplicatedCsv(
+  rows: Record<string, string>[],
+  outputPath: string,
+): Promise<void> {
+  const { writeFile } = await import("fs/promises");
+
+  const headers = Object.keys(rows[0] || {});
+  const csvLines: string[] = [headers.join(",")];
+
+  for (const row of rows) {
+    const values = headers.map((h) => {
+      const val = row[h] || "";
+      if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    });
+    csvLines.push(values.join(","));
+  }
+
+  await writeFile(outputPath, csvLines.join("\n"), "utf-8");
 }
